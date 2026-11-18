@@ -1,0 +1,23 @@
+# Entorno
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# Secretos
+.env
+
+# Caché de descargas (se regenera; se conserva la carpeta)
+data/cache/*
+!data/cache/.gitkeep
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Informes generados
+output/

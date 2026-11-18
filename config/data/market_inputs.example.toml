@@ -1,0 +1,25 @@
+# Plantilla de datos de mercado.
+# Copia este fichero a config/data/market_inputs.toml y rellena cada campo con
+# el dato real, su fuente y su fecha. Tasas en decimal: 0.03 = 3 %.
+# Mientras falten claves, la valoración falla con un error claro (no hay valores por defecto).
+
+[risk_free_rate]
+# Rentabilidad libre de riesgo, p. ej. bono alemán (Bund) a 10 años.
+# value =
+# source = ""
+# date = AAAA-MM-DD
+
+[market_risk_premium]
+# Prima de riesgo de mercado, p. ej. la implícita publicada por Damodaran.
+# value =
+# source = ""
+# date = AAAA-MM-DD
+
+# OPCIONAL. Coste de la deuda antes de impuestos para estimar los intereses de los
+# ejercicios en que Yahoo no los publica: intereses = value × deuda total del año.
+# Si se omite la sección y faltan intereses, la carga falla con un error claro.
+# Descomenta la sección completa para usarla.
+# [default_cost_of_debt]
+# value =
+# source = ""
+# date = AAAA-MM-DD

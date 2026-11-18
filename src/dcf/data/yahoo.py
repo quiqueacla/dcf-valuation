@@ -1,0 +1,469 @@
+"""Descarga de datos de Yahoo Finance, caché en disco y construcción de :class:`Company`.
+
+Tres piezas separadas para poder probar sin red:
+
+1. :func:`fetch_yahoo` descarga los datos crudos (red).
+2. :func:`save_raw` / :func:`load_raw` los guardan y leen de ``data/cache`` (disco).
+3. :func:`build_company` los valida y transforma en ``Company`` en EUR (pura).
+
+Correspondencia de campos en ``docs/metodologia.md`` §1. Yahoo Finance no es una API
+oficial: cada dato obligatorio se valida y, si falta, se lanza un error claro.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from dcf.company import (
+    WORKING_CURRENCY,
+    BalanceSnapshot,
+    Company,
+    CompanyInfo,
+    DebtCostYear,
+    HistoricalYear,
+    RevenueEstimate,
+)
+from dcf.defaults import ANALYST_ESTIMATE_YEARS, HISTORICAL_YEARS
+from dcf.model.wacc import MarketRate
+
+SOURCE = "yahoo_finance"
+DEFAULT_CACHE_DIR = Path("data/cache")
+
+# Filas de Yahoo por estado financiero (nombres tal como los devuelve yfinance).
+INCOME = "income_stmt"
+CASHFLOW = "cashflow"
+BALANCE = "balance_sheet"
+ROW_REVENUE = "Total Revenue"
+ROW_NET_INCOME = "Net Income"
+ROW_INTEREST = "Interest Expense"
+ROW_EBIT = "EBIT"
+ROW_PRETAX = "Pretax Income"
+ROW_TAX = "Tax Provision"
+ROW_DILUTED_SHARES = "Diluted Average Shares"
+ROW_CFO = "Operating Cash Flow"
+ROW_CAPEX = "Capital Expenditure"
+ROW_DEBT_ISSUANCE = "Issuance Of Debt"
+ROW_DEBT_REPAYMENT = "Repayment Of Debt"
+ROW_TOTAL_DEBT = "Total Debt"
+ROW_CASH = "Cash Cash Equivalents And Short Term Investments"
+ROW_MINORITY = "Minority Interest"
+
+# Periodos de revenue_estimate: ejercicio en curso (+1) y siguiente (+2).
+ESTIMATE_PERIODS = ("0y", "+1y")
+
+# Subunidades de cotización: moneda principal y factor (p. ej. peniques → libras).
+MINOR_CURRENCY_UNITS: dict[str, tuple[str, float]] = {
+    "GBp": ("GBP", 0.01),
+    "GBX": ("GBP", 0.01),
+    "ZAc": ("ZAR", 0.01),
+    "ILA": ("ILS", 0.01),
+}
+
+_STATEMENTS = ("income_stmt", "cashflow", "balance_sheet", "revenue_estimate")
+
+
+@dataclass(frozen=True)
+class YahooRawData:
+    """Respuesta cruda de Yahoo Finance para un ticker, tal como se descargó.
+
+    Attributes:
+        ticker: Símbolo consultado.
+        fetched_at: Momento de la descarga, en UTC.
+        info: Ficha del ticker (moneda, cotización, beta, nombre...).
+        income_stmt: Cuenta de resultados anual (filas = partidas, columnas = cierres).
+        cashflow: Estado de flujos de efectivo anual.
+        balance_sheet: Balance anual.
+        revenue_estimate: Consenso de ventas por periodo ("0y", "+1y"...).
+        fx_to_eur: EUR por unidad de cada moneda distinta de EUR usada en los datos.
+    """
+
+    ticker: str
+    fetched_at: datetime
+    info: dict[str, Any]
+    income_stmt: pd.DataFrame
+    cashflow: pd.DataFrame
+    balance_sheet: pd.DataFrame
+    revenue_estimate: pd.DataFrame
+    fx_to_eur: dict[str, float] = field(default_factory=dict)
+
+
+# Pasa una moneda de cotización con subunidad (GBp) a su unidad principal y factor.
+def normalize_price_currency(currency: str) -> tuple[str, float]:
+    """Normaliza la moneda de cotización a su unidad principal.
+
+    Args:
+        currency: Código de moneda de Yahoo (p. ej. "EUR", "GBp").
+
+    Returns:
+        ``(moneda principal, factor)``; p. ej. ``("GBP", 0.01)`` para "GBp".
+    """
+    return MINOR_CURRENCY_UNITS.get(currency, (currency, 1.0))
+
+
+# Monedas distintas de EUR que aparecen en los datos crudos (estados, cotización, estimaciones).
+def _currencies_needed(info: dict[str, Any], revenue_estimate: pd.DataFrame) -> set[str]:
+    currencies = set()
+    for key in ("financialCurrency", "currency"):
+        value = info.get(key)
+        if isinstance(value, str):
+            currencies.add(normalize_price_currency(value)[0])
+    if "currency" in revenue_estimate.columns:
+        currencies.update(str(c) for c in revenue_estimate["currency"].dropna().unique())
+    currencies.discard(WORKING_CURRENCY)
+    return currencies
+
+
+# Descarga de Yahoo estados anuales, ficha, consenso de ventas y tipos de cambio a EUR.
+def fetch_yahoo(ticker: str) -> YahooRawData:  # pragma: no cover - requiere red
+    """Descarga los datos crudos de un ticker desde Yahoo Finance.
+
+    Args:
+        ticker: Símbolo de Yahoo (p. ej. "ITX.MC").
+
+    Returns:
+        Datos crudos con la fecha de descarga y los tipos de cambio necesarios.
+
+    Raises:
+        ValueError: Si Yahoo no devuelve un tipo de cambio válido.
+    """
+    import yfinance as yf
+
+    t = yf.Ticker(ticker)
+    fetched_at = datetime.now(UTC)
+    info = dict(t.info)
+    revenue_estimate = t.revenue_estimate
+    if not isinstance(revenue_estimate, pd.DataFrame):
+        revenue_estimate = pd.DataFrame()
+    fx: dict[str, float] = {}
+    for currency in sorted(_currencies_needed(info, revenue_estimate)):
+        rate = yf.Ticker(f"{currency}{WORKING_CURRENCY}=X").fast_info.last_price
+        if rate is None or not math.isfinite(float(rate)) or float(rate) <= 0:
+            raise ValueError(f"Yahoo no devolvió un tipo de cambio válido {currency}→EUR")
+        fx[currency] = float(rate)
+    return YahooRawData(
+        ticker=ticker,
+        fetched_at=fetched_at,
+        info=info,
+        income_stmt=t.income_stmt,
+        cashflow=t.cashflow,
+        balance_sheet=t.balance_sheet,
+        revenue_estimate=revenue_estimate,
+        fx_to_eur=fx,
+    )
+
+
+# Guarda los datos crudos en data/cache/<ticker>/<fecha UTC>/ (CSV + JSON).
+def save_raw(raw: YahooRawData, cache_dir: Path = DEFAULT_CACHE_DIR) -> Path:
+    """Guarda la respuesta cruda en disco para reproducir la valoración.
+
+    Args:
+        raw: Datos crudos descargados.
+        cache_dir: Carpeta raíz de la caché.
+
+    Returns:
+        Carpeta donde se guardaron los ficheros.
+    """
+    folder = cache_dir / raw.ticker / raw.fetched_at.strftime("%Y%m%dT%H%M%SZ")
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in _STATEMENTS:
+        getattr(raw, name).to_csv(folder / f"{name}.csv")
+    meta = {
+        "ticker": raw.ticker,
+        "fetched_at": raw.fetched_at.isoformat(),
+        "fx_to_eur": raw.fx_to_eur,
+        "info": raw.info,
+    }
+    (folder / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    return folder
+
+
+# Lee de la caché unos datos crudos guardados con save_raw.
+def load_raw(folder: Path) -> YahooRawData:
+    """Carga una respuesta cruda guardada con :func:`save_raw`.
+
+    Args:
+        folder: Carpeta con ``meta.json`` y los CSV de cada estado.
+
+    Returns:
+        Datos crudos equivalentes a los descargados.
+
+    Raises:
+        FileNotFoundError: Si falta algún fichero.
+    """
+    meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
+    frames: dict[str, pd.DataFrame] = {}
+    for name in _STATEMENTS:
+        df = pd.read_csv(folder / f"{name}.csv", index_col=0)
+        if name != "revenue_estimate":
+            df.columns = pd.to_datetime(df.columns)
+        frames[name] = df
+    return YahooRawData(
+        ticker=meta["ticker"],
+        fetched_at=datetime.fromisoformat(meta["fetched_at"]),
+        info=meta["info"],
+        income_stmt=frames["income_stmt"],
+        cashflow=frames["cashflow"],
+        balance_sheet=frames["balance_sheet"],
+        revenue_estimate=frames["revenue_estimate"],
+        fx_to_eur={k: float(v) for k, v in meta["fx_to_eur"].items()},
+    )
+
+
+# EUR por unidad de la moneda; error claro si falta el tipo de cambio.
+def _fx(raw: YahooRawData, currency: str) -> float:
+    if currency == WORKING_CURRENCY:
+        return 1.0
+    if currency not in raw.fx_to_eur:
+        raise ValueError(f"Falta el tipo de cambio {currency}→EUR en los datos descargados")
+    return raw.fx_to_eur[currency]
+
+
+# Lee un campo obligatorio de la ficha (info); error si falta o no es del tipo esperado.
+def _info_value(info: dict[str, Any], key: str, kind: type | tuple[type, ...]) -> Any:
+    value = info.get(key)
+    if value is None or not isinstance(value, kind) or isinstance(value, bool):
+        raise ValueError(f"Yahoo: falta o no es válido info['{key}'] (recibido {value!r})")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"Yahoo: info['{key}'] no es finito")
+    return value
+
+
+# Celda numérica de un DataFrame como float, o None si falta la fila/columna o es NaN.
+def _cell(df: pd.DataFrame, row: object, column: object) -> float | None:
+    if row not in df.index or column not in df.columns:
+        return None
+    value: Any = df.at[row, column]
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(number) else number
+
+
+# Valor obligatorio de un estado; error claro si falta la fila o el dato del año.
+def _required(df: pd.DataFrame, statement: str, row: str, column: pd.Timestamp) -> float:
+    if row not in df.index:
+        raise ValueError(f"Yahoo: falta la fila '{row}' en {statement}")
+    value = _cell(df, row, column)
+    if value is None:
+        raise ValueError(f"Yahoo: '{row}' sin dato en {statement} para el cierre {column.date()}")
+    return value
+
+
+# Valor que Yahoo omite cuando es 0: devuelve 0 y registra un aviso si falta.
+def _zero_if_missing(
+    df: pd.DataFrame, statement: str, row: str, column: pd.Timestamp, warnings: list[str]
+) -> float:
+    value = _cell(df, row, column)
+    if value is None:
+        warnings.append(f"'{row}' ausente en {statement} ({column.date()}): se usa 0")
+        return 0.0
+    return value
+
+
+# Cierres comunes a los tres estados con datos, ordenados; se toman los últimos n.
+def _select_columns(raw: YahooRawData, years: int, warnings: list[str]) -> list[pd.Timestamp]:
+    common: set[pd.Timestamp] | None = None
+    for statement in (INCOME, CASHFLOW, BALANCE):
+        df: pd.DataFrame = getattr(raw, statement)
+        if df.empty:
+            raise ValueError(f"Yahoo: {statement} vacío para {raw.ticker}")
+        with_data = {pd.Timestamp(c) for c in df.columns if df[c].notna().any()}
+        common = with_data if common is None else common & with_data
+    columns = sorted(common or set())
+    if len(columns) < years:
+        warnings.append(f"Solo hay {len(columns)} ejercicios comunes, se esperaban {years}")
+    return columns[-years:]
+
+
+# Estimaciones de ventas +1 y +2 en EUR; se detiene en el primer periodo sin dato.
+def _estimates(
+    raw: YahooRawData, last_year: int, default_currency: str, warnings: list[str]
+) -> tuple[RevenueEstimate, ...]:
+    df = raw.revenue_estimate
+    result: list[RevenueEstimate] = []
+    for offset, period in enumerate(ESTIMATE_PERIODS[:ANALYST_ESTIMATE_YEARS], start=1):
+        if df.empty or period not in df.index or "avg" not in df.columns:
+            warnings.append(f"Sin estimación de ventas de analistas para '{period}'")
+            break
+        avg = _cell(df, period, "avg")
+        has_count = "numberOfAnalysts" in df.columns
+        analysts = _cell(df, period, "numberOfAnalysts")
+        if avg is None or avg <= 0 or (has_count and (analysts is None or analysts <= 0)):
+            warnings.append(f"Estimación de ventas de analistas no válida para '{period}'")
+            break
+        currency = default_currency
+        if "currency" in df.columns:
+            raw_currency: Any = df.at[period, "currency"]
+            if isinstance(raw_currency, str) and raw_currency:
+                currency = raw_currency
+        rate = _fx(raw, currency)
+        low, high = _cell(df, period, "low"), _cell(df, period, "high")
+        result.append(
+            RevenueEstimate(
+                fiscal_year=last_year + offset,
+                revenue=avg * rate,
+                num_analysts=int(analysts) if analysts is not None else None,
+                revenue_low=low * rate if low is not None and low > 0 else None,
+                revenue_high=high * rate if high is not None and high > 0 else None,
+            )
+        )
+    return tuple(result)
+
+
+# Intereses del ejercicio en EUR; si Yahoo no los da, Kd por defecto × deuda total con aviso.
+def _interest(
+    income: pd.DataFrame,
+    column: pd.Timestamp,
+    total_debt_eur: float,
+    fx: float,
+    default_cost_of_debt: MarketRate | None,
+    warnings: list[str],
+) -> float:
+    value = _cell(income, ROW_INTEREST, column)
+    if value is not None:
+        return abs(value) * fx
+    if default_cost_of_debt is None:
+        raise ValueError(
+            f"Yahoo: '{ROW_INTEREST}' sin dato en {INCOME} para el cierre {column.date()}. "
+            "Para estimarlo, añade [default_cost_of_debt] a config/data/market_inputs.toml"
+        )
+    estimated = default_cost_of_debt.value * total_debt_eur
+    warnings.append(
+        f"'{ROW_INTEREST}' ausente ({column.date()}): estimado como "
+        f"{default_cost_of_debt.value:.2%} × deuda total = {estimated:,.0f} EUR "
+        f"(fuente: {default_cost_of_debt.source})"
+    )
+    return estimated
+
+
+# Valida los datos crudos y construye Company con todos los importes en EUR.
+def build_company(
+    raw: YahooRawData,
+    default_cost_of_debt: MarketRate | None = None,
+    historical_years: int = HISTORICAL_YEARS,
+) -> Company:
+    """Construye la compañía a partir de la respuesta cruda de Yahoo.
+
+    Args:
+        raw: Datos crudos (descargados o leídos de la caché).
+        default_cost_of_debt: Kd antes de impuestos (de ``market_inputs.toml``) para
+            estimar los intereses de los ejercicios en que Yahoo no los publica:
+            intereses = Kd por defecto × deuda total del ejercicio. ``None`` = error.
+        historical_years: Ejercicios históricos a tomar (los más recientes).
+
+    Returns:
+        Compañía con importes en EUR y avisos de carga en ``info.data_warnings``.
+
+    Raises:
+        ValueError: Si falta algún dato obligatorio, un tipo de cambio, o los
+            intereses de un ejercicio sin ``default_cost_of_debt``.
+    """
+    warnings: list[str] = []
+    financial_currency = str(_info_value(raw.info, "financialCurrency", str))
+    price_currency, price_unit = normalize_price_currency(
+        str(_info_value(raw.info, "currency", str))
+    )
+    fx = _fx(raw, financial_currency)
+    price_fx = _fx(raw, price_currency)
+
+    columns = _select_columns(raw, historical_years, warnings)
+    inc, cf, bs = raw.income_stmt, raw.cashflow, raw.balance_sheet
+
+    historicals: list[HistoricalYear] = []
+    debt_cost: list[DebtCostYear] = []
+    for col in columns:
+        total_debt = _required(bs, BALANCE, ROW_TOTAL_DEBT, col) * fx
+        interest = _interest(inc, col, total_debt, fx, default_cost_of_debt, warnings)
+        historicals.append(
+            HistoricalYear(
+                fiscal_year=col.year,
+                revenue=_required(inc, INCOME, ROW_REVENUE, col) * fx,
+                net_income=_required(inc, INCOME, ROW_NET_INCOME, col) * fx,
+                operating_cash_flow=_required(cf, CASHFLOW, ROW_CFO, col) * fx,
+                capital_expenditure=abs(_required(cf, CASHFLOW, ROW_CAPEX, col)) * fx,
+                interest_expense=interest,
+                debt_issuance=abs(_zero_if_missing(cf, CASHFLOW, ROW_DEBT_ISSUANCE, col, warnings))
+                * fx,
+                debt_repayment=abs(
+                    _zero_if_missing(cf, CASHFLOW, ROW_DEBT_REPAYMENT, col, warnings)
+                )
+                * fx,
+            )
+        )
+        debt_cost.append(
+            DebtCostYear(
+                fiscal_year=col.year,
+                total_debt=total_debt,
+                interest_expense=interest,
+                ebit=_required(inc, INCOME, ROW_EBIT, col) * fx,
+                pretax_income=_required(inc, INCOME, ROW_PRETAX, col) * fx,
+                tax_provision=_required(inc, INCOME, ROW_TAX, col) * fx,
+            )
+        )
+
+    last = columns[-1]
+    price = float(_info_value(raw.info, "currentPrice", (int, float))) * price_unit * price_fx
+    balance = BalanceSnapshot(
+        balance_date=datetime(last.year, last.month, last.day, tzinfo=UTC),
+        cash=_required(bs, BALANCE, ROW_CASH, last) * fx,
+        total_debt=_required(bs, BALANCE, ROW_TOTAL_DEBT, last) * fx,
+        minority_interest=_zero_if_missing(bs, BALANCE, ROW_MINORITY, last, warnings) * fx,
+        diluted_shares=_required(inc, INCOME, ROW_DILUTED_SHARES, last),
+        share_price=price,
+        beta=float(_info_value(raw.info, "beta", (int, float))),
+    )
+    estimates = _estimates(raw, last.year, financial_currency, warnings)
+
+    uses_fx = financial_currency != WORKING_CURRENCY or price_currency != WORKING_CURRENCY
+    uses_fx = uses_fx or any(c != WORKING_CURRENCY for c in raw.fx_to_eur)
+    name = raw.info.get("longName") or raw.info.get("shortName") or raw.ticker
+    info = CompanyInfo(
+        ticker=raw.ticker,
+        name=str(name),
+        source=SOURCE,
+        data_date=raw.fetched_at,
+        original_currency=financial_currency,
+        fx_rate_to_eur=fx,
+        fx_date=raw.fetched_at if uses_fx else None,
+        price_currency=price_currency,
+        price_fx_rate_to_eur=price_fx,
+        data_warnings=tuple(warnings),
+    )
+    return Company(
+        info=info,
+        historicals=tuple(historicals),
+        debt_cost_data=tuple(debt_cost),
+        balance=balance,
+        revenue_estimates=estimates,
+    )
+
+
+# Descarga, guarda en caché y construye la compañía.
+def fetch_company(
+    ticker: str,
+    default_cost_of_debt: MarketRate | None = None,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+) -> Company:  # pragma: no cover - requiere red
+    """Descarga un ticker de Yahoo, guarda la respuesta en caché y construye ``Company``.
+
+    Args:
+        ticker: Símbolo de Yahoo.
+        default_cost_of_debt: Kd para estimar intereses ausentes (ver ``build_company``).
+        cache_dir: Carpeta raíz de la caché.
+
+    Returns:
+        Compañía con importes en EUR.
+    """
+    raw = fetch_yahoo(ticker)
+    save_raw(raw, cache_dir)
+    return build_company(raw, default_cost_of_debt)
