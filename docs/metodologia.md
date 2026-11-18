@@ -165,3 +165,6 @@ Se configuran en `config/settings.toml` (`[scenarios]`). Hay dos modos combinabl
 intrínseco (puente, escenarios y sensibilidad). Importes en millones de EUR con 1 decimal, valor
 por acción con 2 decimales y tasas en % con 2 decimales, con redondeo comercial (mitad hacia
 arriba) solo en la presentación.
+
+En una terminal el informe se muestra formateado con `rich`; si la salida se redirige o se usa
+`--raw`, se escribe el Markdown tal cual. El fichero `.md` guardado es siempre Markdown.

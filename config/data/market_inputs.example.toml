@@ -5,12 +5,14 @@
 
 [risk_free_rate]
 # Rentabilidad libre de riesgo, p. ej. bono alemán (Bund) a 10 años.
+# Se puede sacar para europa por ejemplo de https://www.ecb.europa.eu/stats/financial_markets_and_interest_rates/euro_area_yield_curves/html/index.en.html
 # value =
 # source = ""
 # date = AAAA-MM-DD
 
 [market_risk_premium]
 # Prima de riesgo de mercado, p. ej. la implícita publicada por Damodaran.
+#https://pages.stern.nyu.edu/adamodar/New_Home_Page/datafile/ctryprem.html
 # value =
 # source = ""
 # date = AAAA-MM-DD

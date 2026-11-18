@@ -18,6 +18,7 @@ from dcf.data.market_inputs import DEFAULT_MARKET_INPUTS_PATH, load_market_input
 from dcf.data.yahoo import DEFAULT_CACHE_DIR, build_company, fetch_company, load_raw
 from dcf.model.assumptions import Assumptions
 from dcf.model.wacc import MarketInputs, MarketRate
+from dcf.reports.console import print_report
 from dcf.reports.markdown import render_report
 from dcf.settings import DEFAULT_SETTINGS_PATH, AppSettings, apply_overrides, load_settings
 from dcf.valuation.dcf import value_company
@@ -82,6 +83,11 @@ def _parser() -> argparse.ArgumentParser:
         "--no-extras",
         action="store_true",
         help="Sin escenarios (la tabla de sensibilidad se mantiene siempre)",
+    )
+    p.add_argument(
+        "--raw",
+        action="store_true",
+        help="Muestra el informe en Markdown sin formatear (útil para copiarlo o redirigirlo)",
     )
     p.add_argument(
         "--from-cache", type=Path, help="Carpeta de data/cache con una descarga previa (sin red)"
@@ -208,7 +214,7 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
             print(f"Error en {ticker}: {exc}", file=sys.stderr)
             continue
         if len(tickers) == 1:
-            print(render_report(company, result))
+            print_report(render_report(company, result), raw=args.raw)
             print(f"\nInforme guardado en {path}")
         else:
             print(_summary(company, result, path))

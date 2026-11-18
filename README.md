@@ -14,7 +14,7 @@ python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Script
 pip install -e .                                          # con tests: pip install -e ".[dev]"
 ```
 
-Requiere Python ≥ 3.12. Dependencias: `yfinance`, `pandas`, `numpy`.
+Requiere Python ≥ 3.12. Dependencias: `yfinance`, `pandas`, `numpy`, `rich`.
 
 Con [uv](https://docs.astral.sh/uv/) basta con `uv sync` y anteponer `uv run` a los comandos.
 
@@ -87,7 +87,10 @@ dcf ITX.MC --from-cache data/cache/ITX.MC/20261118T103000Z   # repetir sin red
 Claves de `--set`: `terminal_growth` (o `g`), `projection_years`, `modes`, `wacc_shift`,
 `growth_shift`. Las tasas admiten `2%` o `0.02`.
 
-Con un ticker se muestra el informe completo en consola; con varios, un resumen por ticker.
+Con un ticker se muestra el informe completo en consola, formateado con
+[rich](https://github.com/Textualize/rich) (títulos, tablas con bordes, negritas); con varios,
+un resumen por ticker. Si la salida se redirige (`dcf ITX.MC > informe.md`) o se usa `--raw`,
+se escribe el Markdown sin formatear.
 Cada informe se guarda en `<carpeta>/<TICKER>_<fecha UTC>.md` y cada descarga en `data/cache/`.
 La tabla de sensibilidad WACC × g se incluye siempre.
 
