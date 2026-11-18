@@ -1,0 +1,5 @@
+# Lista de tickers de Yahoo Finance para: dcf -f tickers.example.txt
+# Uno o varios por línea (separados por espacios o comas). "#" inicia un comentario.
+ITX.MC
+SAN.MC, IBE.MC
+AAPL   # no publica intereses: necesita [default_cost_of_debt] en market_inputs.toml

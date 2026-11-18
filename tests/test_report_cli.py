@@ -89,7 +89,7 @@ def test_settings_rechaza_modo_desconocido(tmp_path: Path) -> None:
 
 def test_settings_del_repo_es_valido() -> None:
     s = load_settings(Path(__file__).parents[1] / "config/settings.toml")
-    assert s.terminal_growth is None  # el usuario debe fijarlo
+    assert s.projection_years >= 2
     assert s.scenarios.wacc_shift == 0.01
 
 

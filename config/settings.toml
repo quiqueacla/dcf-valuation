@@ -3,13 +3,18 @@
 [valuation]
 # Crecimiento terminal (g) del valor terminal de Gordon. Debe ser < WACC y < rf.
 # Es un supuesto del analista: fíjalo aquí o pásalo con --g en la línea de comandos.
-# terminal_growth =
+terminal_growth = 0.025
+# Años de proyección explícita (por defecto 5, mínimo 2). También con --set projection_years=7.
+# projection_years = 5
 
 [scenarios]
 # Modos de los escenarios bajista / alcista (se pueden combinar; [] = solo neutro):
 #   "ventas": ventas +1/+2 con la estimación baja / alta de los analistas (media si falta).
 #   "coste":  bajista = WACC + wacc_shift y g − growth_shift; alcista = al revés.
-modes = ["ventas", "coste"]
+#modes = []
+#modes = ["ventas"]
+modes = ["coste"]
+#modes = ["ventas", "coste"]
 # Desplazamientos del modo "coste". Motivo: rango habitual en informes (± 1 punto de WACC,
 # ± 0,5 puntos de g), coherente con los pasos de la tabla de sensibilidad.
 wacc_shift = 0.01

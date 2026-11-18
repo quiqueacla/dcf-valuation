@@ -3,11 +3,23 @@ name = "dcf"
 version = "0.1.0"
 description = "Valoración de empresas por flujos de caja descontados (DCF). Herramienta educativa, no es recomendación de inversión."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
     "yfinance>=0.2.50",
+]
+
+[project.scripts]
+dcf = "dcf.cli:main"
+
+# Para pip: pip install -e ".[dev]". Con uv se usa el grupo equivalente de abajo.
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.13",
+    "pandas-stubs>=2.2",
+    "pytest>=8.3",
+    "ruff>=0.8",
 ]
 
 [dependency-groups]
