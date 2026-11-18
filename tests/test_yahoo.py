@@ -153,12 +153,25 @@ def test_error_si_falta_dato_de_un_ano() -> None:
         build_company(dataclasses.replace(raw, income_stmt=income))
 
 
-@pytest.mark.parametrize("key", ["beta", "currentPrice", "financialCurrency"])
+@pytest.mark.parametrize("key", ["currentPrice", "financialCurrency"])
 def test_error_si_falta_dato_de_info(key: str) -> None:
     raw = _raw()
     info = {k: v for k, v in raw.info.items() if k != key}
     with pytest.raises(ValueError, match=key):
         build_company(dataclasses.replace(raw, info=info))
+
+
+# Sin beta en Yahoo la carga no falla: el modo de [beta] decide en el WACC.
+def test_beta_ausente_queda_como_none() -> None:
+    raw = _raw()
+    info = {k: v for k, v in raw.info.items() if k != "beta"}
+    assert build_company(dataclasses.replace(raw, info=info)).balance.beta is None
+
+
+def test_beta_no_numerica_es_error() -> None:
+    raw = _raw()
+    with pytest.raises(ValueError, match="beta"):
+        build_company(dataclasses.replace(raw, info={**raw.info, "beta": "alta"}))
 
 
 def test_error_si_falta_tipo_de_cambio() -> None:

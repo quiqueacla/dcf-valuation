@@ -420,7 +420,12 @@ def build_company(
         minority_interest=_zero_if_missing(bs, BALANCE, ROW_MINORITY, last, warnings) * fx,
         diluted_shares=_required(inc, INCOME, ROW_DILUTED_SHARES, last),
         share_price=price,
-        beta=float(_info_value(raw.info, "beta", (int, float))),
+        # Beta opcional: si falta, el modo de [beta] decide (error o beta del fichero).
+        beta=(
+            float(_info_value(raw.info, "beta", (int, float)))
+            if raw.info.get("beta") is not None
+            else None
+        ),
     )
     estimates = _estimates(raw, last.year, financial_currency, warnings)
 

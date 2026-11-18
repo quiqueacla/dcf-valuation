@@ -209,7 +209,9 @@ class BalanceSnapshot:
         diluted_shares: Número de acciones diluidas en circulación.
         share_price: Cotización de la acción, en EUR.
         beta: Sensibilidad del rendimiento de la acción al del mercado (riesgo
-            sistemático), según la fuente de datos.
+            sistemático), según la fuente de datos. ``None`` si la fuente no la publica.
+            La beta que se usa en el CAPM se decide en el WACC según ``[beta]`` de
+            ``market_inputs.toml``.
     """
 
     balance_date: datetime
@@ -218,12 +220,13 @@ class BalanceSnapshot:
     minority_interest: float
     diluted_shares: float
     share_price: float
-    beta: float
+    beta: float | None
 
-    # Valida importes no negativos, acciones y precio positivos y beta finita.
+    # Valida importes no negativos, acciones y precio positivos y beta finita si existe.
     def __post_init__(self) -> None:
         _require_aware("balance_date", self.balance_date)
-        _require_finite("beta", self.beta)
+        if self.beta is not None:
+            _require_finite("beta", self.beta)
         _require_non_negative("cash", self.cash)
         _require_non_negative("total_debt", self.total_debt)
         _require_non_negative("minority_interest", self.minority_interest)

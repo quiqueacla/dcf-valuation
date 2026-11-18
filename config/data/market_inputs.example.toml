@@ -25,3 +25,20 @@
 # value =
 # source = ""
 # date = AAAA-MM-DD
+
+# OPCIONAL. Beta de la acción. Sin esta sección se usa la de Yahoo (modo "yahoo").
+# mode:
+#   "yahoo"          solo la de Yahoo; error si no la publica o es negativa.
+#   "fichero"        siempre la del fichero (override de la de Yahoo).
+#   "yahoo-fichero"  la de Yahoo; si no la publica o es negativa, la del fichero
+#                    (el informe indica el motivo).
+# value/source/date en [beta] valen para todos los tickers; en [beta."TICKER"] solo
+# para ese ticker y prevalecen sobre la general (el ticker también puede fijar su mode).
+# Betas sectoriales: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/Betas.html
+# [beta]
+# mode = "yahoo-fichero"
+#
+# [beta."REP.MC"]
+# value =
+# source = ""
+# date = AAAA-MM-DD

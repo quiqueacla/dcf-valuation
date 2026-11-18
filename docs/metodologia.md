@@ -36,7 +36,7 @@ Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
 | Caja | Cash Cash Equivalents And Short Term Investments | balance_sheet | Obligatorio |
 | Minoritarios | Minority Interest | balance_sheet | 0 con aviso si falta |
 | Cotización | info.currentPrice | info | Obligatorio |
-| Beta | info.beta | info | Obligatorio |
+| Beta | info.beta | info | Opcional en la carga; el modo de `[beta]` decide (§4) |
 | Ventas estimadas +1, +2 | revenue_estimate "0y", "+1y" (avg) | revenue_estimate | Opcional, aviso si falta |
 
 - **Años:** los 4 últimos ejercicios comunes a los tres estados; el ejercicio se identifica por el
@@ -97,7 +97,7 @@ WACC = E/(D+E) · Ke + D/(D+E) · Kd · (1 − t)
 |---|---|---|
 | rf | Rentabilidad libre de riesgo | `config/data/market_inputs.toml` (valor, fuente y fecha que introduce el usuario) |
 | PRM | Prima de riesgo de mercado | `config/data/market_inputs.toml` |
-| β | Beta de la acción | Yahoo Finance (5 años, datos mensuales). Si falta, error |
+| β | Beta de la acción | Según `[beta].mode` de `market_inputs.toml` (ver abajo). Por defecto Yahoo Finance (5 años, datos mensuales) |
 | Ke | CAPM: rf + β · PRM | — |
 | Kd | Media de los Kd_i = Intereses_i / Deuda total_i | Históricos. Se excluyen años con deuda 0. Años sin intereses publicados: Kd_i = `[default_cost_of_debt]` |
 | t | Media de los t_i = Provisión_i / BAI_i válidos | Históricos (mismos criterios de exclusión que §2) |
@@ -105,6 +105,20 @@ WACC = E/(D+E) · Ke + D/(D+E) · Kd · (1 − t)
 | D | Deuda financiera total (valor contable) | Último balance |
 
 Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita Kd.
+
+**Selección de la beta** (`[beta]` en `config/data/market_inputs.toml`, opcional):
+
+| Modo | Beta usada | Error |
+|---|---|---|
+| `yahoo` (por defecto) | La de Yahoo | Si Yahoo no la publica o es negativa |
+| `fichero` | La del fichero (override) | Si no hay beta en el fichero |
+| `yahoo-fichero` | La de Yahoo; si no la publica o es negativa, la del fichero, con el motivo en el informe y en los avisos del WACC | Si hace falta la del fichero y no está |
+
+- La beta del fichero lleva `value`, `source` y `date`. Puede ser general (`[beta]`) o por
+  ticker (`[beta."REP.MC"]`); la del ticker prevalece campo a campo, también en `mode`.
+- Una beta negativa no es válida: daría Ke < rf (p. ej. Repsol en Yahoo, β = −0,181, por la
+  correlación negativa con el mercado en 2022). Una beta 0 se acepta (Ke = rf).
+- El informe muestra la beta publicada por Yahoo y la utilizada, con fuente, fecha y modo.
 
 ## 5. Descuento y valor terminal
 

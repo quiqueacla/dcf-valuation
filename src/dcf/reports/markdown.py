@@ -87,7 +87,7 @@ def _company_section(company: Company, result: ValuationResult, scale: float, un
         [f"Deuda total, incl. arrendamientos ({unit})", _amount(b.total_debt, scale)],
         [f"Caja y equivalentes ({unit})", _amount(b.cash, scale)],
         [f"Minoritarios ({unit})", _amount(b.minority_interest, scale)],
-        ["Beta", _num(b.beta, 3)],
+        [f"Beta publicada ({info.source})", "no publicada" if b.beta is None else _num(b.beta, 3)],
     ]
     return (
         "## 1. Información de la compañía\n\n"
@@ -101,6 +101,10 @@ def _company_section(company: Company, result: ValuationResult, scale: float, un
 def _wacc_section(company: Company, result: ValuationResult, scale: float, unit: str) -> str:
     w = result.wacc
     rf, prm = w.market_inputs.risk_free_rate, w.market_inputs.market_risk_premium
+    beta = w.beta_choice
+    beta_origin = f"{beta.source} ({beta.date:%Y-%m-%d}); modo {beta.mode.value}"
+    if beta.reason is not None:
+        beta_origin += f"; se usa la del fichero porque {beta.reason}"
     ke_rows = [
         ["Rentabilidad libre de riesgo (rf)", _pct(rf.value), f"{rf.source} ({rf.date:%Y-%m-%d})"],
         [
@@ -108,7 +112,7 @@ def _wacc_section(company: Company, result: ValuationResult, scale: float, unit:
             _pct(prm.value),
             f"{prm.source} ({prm.date:%Y-%m-%d})",
         ],
-        ["Beta (β)", _num(w.beta, 3), company.info.source],
+        ["Beta (β)", _num(w.beta, 3), beta_origin],
         ["**Coste del capital Ke = rf + β · PRM**", f"**{_pct(w.cost_of_equity)}**", "CAPM"],
     ]
     kd_rows = [
