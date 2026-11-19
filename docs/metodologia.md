@@ -212,6 +212,14 @@ En una terminal el informe se muestra formateado con `rich`; si la salida se red
 Con el modelo FCFE el informe cambia la sección 2 (solo Ke, sin WACC ni Kd), la 3 (fondos
 propios, ROE y reinversión) y la 4 (sin puente deuda/caja; añade valor contable y P/VC).
 
+**Resumen de un lote** (varios tickers): `output/resumen_<fecha UTC>.md` y `.csv`, una fila por
+ticker con empresa, modelo, cotización, valor bajista / neutro / alcista y su margen potencial
+= valor / cotización − 1, tasa de descuento (WACC o Ke) y g con sus fuentes (rf, PRM, beta y,
+en FCFF, Kd y t), y todos los avisos (carga, modelo, tasa, proyección, escenarios no válidos).
+Sin escenarios, bajista y alcista quedan vacíos y el neutro es la valoración central. Los
+tickers que fallan se incluyen con su error. CSV con separador `;`, decimal `,` y UTF-8 con
+BOM (Excel en español); números sin redondear, tasas y márgenes en decimal.
+
 ## 10. Modelo FCFE (bancos y aseguradoras)
 
 En una financiera la deuda (depósitos, reservas técnicas) es la materia prima del negocio, no

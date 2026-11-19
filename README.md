@@ -101,6 +101,13 @@ se escribe el Markdown sin formatear.
 Cada informe se guarda en `<carpeta>/<TICKER>_<fecha UTC>.md` y cada descarga en `data/cache/`.
 La tabla de sensibilidad WACC × g se incluye siempre.
 
+Con varios tickers se guarda además un resumen del lote en `<carpeta>/resumen_<fecha UTC>.md`
+y `.csv`, con una fila por ticker: empresa, modelo, cotización, valor bajista, neutro y alcista
+con su margen potencial frente a la cotización, tasa de descuento (WACC o Ke) y g con sus
+fuentes, y avisos. Los tickers que fallan aparecen con su error. El CSV usa el formato de Excel
+en español (separador `;`, decimal `,`, UTF-8 con BOM); las tasas y los márgenes van en
+decimal (0,10 = 10 %).
+
 ## Desarrollo
 
 ```bash

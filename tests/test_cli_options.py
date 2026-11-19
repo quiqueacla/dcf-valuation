@@ -157,7 +157,10 @@ def test_varios_tickers_con_fichero_y_un_error(
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == [
         "AAA_20261118T120000Z.md",
         "BBB_20261118T120000Z.md",
+        "resumen_20261118T120000Z.csv",
+        "resumen_20261118T120000Z.md",
     ]
+    assert "Resumen guardado en" in out
 
 
 def _two_tickers(tmp_path: Path, *extra: str) -> list[str]:

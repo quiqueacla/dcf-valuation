@@ -91,17 +91,22 @@ def eur(value: float | None) -> str:
 
 
 # Tabla Markdown a partir de cabecera y filas de texto.
-def table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
-    """Construye una tabla Markdown (primera columna a la izquierda, resto a la derecha).
+def table(
+    headers: Sequence[str],
+    rows: Sequence[Sequence[str]],
+    text_columns: frozenset[int] = frozenset({0}),
+) -> str:
+    """Construye una tabla Markdown (columnas de texto a la izquierda, números a la derecha).
 
     Args:
         headers: Cabecera.
         rows: Filas de texto.
+        text_columns: Índices de las columnas alineadas a la izquierda (por defecto la 1.ª).
 
     Returns:
         Tabla Markdown.
     """
-    align = ["---"] + ["---:"] * (len(headers) - 1)
+    align = ["---" if i in text_columns else "---:" for i in range(len(headers))]
     lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(align) + " |"]
     lines += ["| " + " | ".join(row) + " |" for row in rows]
     return "\n".join(lines)

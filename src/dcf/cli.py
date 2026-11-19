@@ -2,7 +2,8 @@
 
 Para cada ticker descarga (o lee de la caché) los datos, valora y guarda el informe en
 Markdown. Con un solo ticker muestra el informe completo en consola; con varios, un
-resumen por ticker. Un ticker con error no detiene al resto.
+resumen por ticker y guarda el resumen del lote en ``resumen_<fecha>.md`` y ``.csv``.
+Un ticker con error no detiene al resto.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+import dcf
 from dcf.company import Company, ValuationModel, model_suitability_warning
 from dcf.data.company_types import (
     DEFAULT_COMPANY_TYPES_PATH,
@@ -25,6 +27,14 @@ from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
 from dcf.reports.console import print_report
 from dcf.reports.markdown import render_report
+from dcf.reports.summary import (
+    CSV_ENCODING,
+    SummaryRow,
+    error_row,
+    render_summary,
+    summary_csv,
+    summary_row,
+)
 from dcf.settings import DEFAULT_SETTINGS_PATH, AppSettings, apply_overrides, load_settings
 from dcf.valuation.fcfe_result import FcfeValuationResult
 from dcf.valuation.run import AnyValuationResult, run_valuation
@@ -244,6 +254,8 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
 
     moment = now or datetime.now(UTC)
     failures = 0
+    rows: list[SummaryRow] = []
+    growth_source = _growth_source(args)
     for ticker in tickers:
         try:
             company, result, path = _value_one(
@@ -252,7 +264,9 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
         except (ValueError, FileNotFoundError) as exc:
             failures += 1
             print(f"Error en {ticker}: {exc}", file=sys.stderr)
+            rows.append(error_row(ticker, str(exc)))
             continue
+        rows.append(summary_row(company, result, growth_source))
         if len(tickers) == 1:
             print_report(render_report(company, result), raw=args.raw)
             print(f"\nInforme guardado en {path}")
@@ -261,4 +275,26 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
 
     if len(tickers) > 1:
         print(f"\n{len(tickers) - failures} de {len(tickers)} tickers valorados.")
+        md_path, csv_path = _write_summary(rows, args.output_dir, moment)
+        print(f"Resumen guardado en {md_path} y {csv_path}")
     return 1 if failures else 0
+
+
+# Origen del g terminal: argumento --g, --set o el fichero de configuración.
+def _growth_source(args: argparse.Namespace) -> str:
+    if args.g is not None:
+        return "argumento --g"
+    keys = {pair.partition("=")[0].strip().lower() for pair in args.overrides}
+    if keys & {"g", "terminal_growth"}:
+        return "argumento --set"
+    return f"{args.settings} [valuation].terminal_growth"
+
+
+# Guarda el resumen del lote en Markdown y CSV; devuelve las dos rutas.
+def _write_summary(rows: list[SummaryRow], folder: Path, moment: datetime) -> tuple[Path, Path]:
+    folder.mkdir(parents=True, exist_ok=True)
+    stem = folder / f"resumen_{moment:%Y%m%dT%H%M%SZ}"
+    md_path, csv_path = stem.with_suffix(".md"), stem.with_suffix(".csv")
+    md_path.write_text(render_summary(rows, moment, dcf.__version__), encoding="utf-8")
+    csv_path.write_text(summary_csv(rows), encoding=CSV_ENCODING, newline="")
+    return md_path, csv_path
