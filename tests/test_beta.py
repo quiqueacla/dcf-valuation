@@ -13,14 +13,8 @@ import pytest
 
 from dcf.company import Company
 from dcf.data.market_inputs import load_market_inputs
-from dcf.model.wacc import (
-    BetaMode,
-    BetaSettings,
-    MarketInputs,
-    MarketRate,
-    compute_wacc,
-    resolve_beta,
-)
+from dcf.model.cost_of_equity import BetaMode, BetaSettings, MarketInputs, MarketRate, resolve_beta
+from dcf.model.wacc import compute_wacc
 from tests.test_market_inputs import VALID
 
 REL = 1e-9
@@ -180,7 +174,7 @@ def test_seccion_beta_invalida(tmp_path: Path, extra: str, match: str) -> None:
 def test_informe_indica_origen_y_motivo(company: Company, market_inputs: MarketInputs) -> None:
     from dcf.model.assumptions import Assumptions
     from dcf.reports.markdown import render_report
-    from dcf.valuation.dcf import value_company
+    from dcf.valuation.fcff import value_company
 
     c = _with_beta(company, -0.181)
     m = _inputs(market_inputs, BetaMode.YAHOO_FILE, MANUAL)

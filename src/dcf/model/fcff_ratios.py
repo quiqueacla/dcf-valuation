@@ -1,4 +1,4 @@
-"""Ratios históricos que alimentan la proyección (funciones puras, sin I/O).
+"""Modelo FCFF: ratios históricos que alimentan la proyección (funciones puras, sin I/O).
 
 Fórmulas en ``docs/metodologia.md`` §2. Tasas en decimal (0.08 = 8 %), importes en EUR.
 """
@@ -9,7 +9,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from dcf.company import Company, DebtCostYear, HistoricalYear
+from dcf.company import Company, DebtCostYear, HistoricalYear, ValuationModel, required
+from dcf.model.revenue_projection import net_margin_by_year, revenue_growth_by_year
+
+FCFF = ValuationModel.FCFF
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,12 +73,15 @@ def historical_fcff(year: HistoricalYear, tax_rate: float) -> float:
 
     Returns:
         FCFF en EUR.
+
+    Raises:
+        ValueError: Si falta CFO, intereses o Capex del ejercicio.
     """
-    return (
-        year.operating_cash_flow
-        + year.interest_expense * (1.0 - tax_rate)
-        - year.capital_expenditure
-    )
+    label = f"{year.fiscal_year}"
+    cfo = required(year.operating_cash_flow, f"el CFO de {label}", FCFF)
+    interest = required(year.interest_expense, f"los intereses de {label}", FCFF)
+    capex = required(year.capital_expenditure, f"el Capex de {label}", FCFF)
+    return cfo + interest * (1.0 - tax_rate) - capex
 
 
 # Calcula crecimientos, márgenes, t, FCFF y FCFF/Net Income por año y sus medias.
@@ -100,11 +106,8 @@ def compute_historical_ratios(company: Company) -> HistoricalRatios:
             f"Faltan datos de impuestos (BAI, provisión) para los ejercicios {missing}"
         )
 
-    growth = {
-        curr.fiscal_year: curr.revenue / prev.revenue - 1.0
-        for prev, curr in zip(company.historicals, company.historicals[1:], strict=False)
-    }
-    margin = {h.fiscal_year: h.net_income / h.revenue for h in company.historicals}
+    growth = revenue_growth_by_year(company.historicals)
+    margin = net_margin_by_year(company.historicals)
 
     tax_rates: dict[int, float] = {}
     fcff: dict[int, float] = {}

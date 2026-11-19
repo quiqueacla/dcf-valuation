@@ -16,15 +16,14 @@ import pytest
 import dcf
 from dcf.company import BalanceSnapshot, Company
 from dcf.model.assumptions import Assumptions
+from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.terminal_value import gordon_terminal_value
-from dcf.model.wacc import MarketInputs
-from dcf.valuation.dcf import (
+from dcf.valuation.discounting import discount_factors, value_per_share
+from dcf.valuation.fcff import (
     compute_enterprise_value,
-    discount_factors,
     equity_value,
     sensitivity_table,
     value_company,
-    value_per_share,
 )
 
 REL = 1e-9

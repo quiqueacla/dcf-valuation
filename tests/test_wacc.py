@@ -11,13 +11,8 @@ from datetime import UTC, datetime
 import pytest
 
 from dcf.company import Company
-from dcf.model.wacc import (
-    MarketInputs,
-    MarketRate,
-    compute_wacc,
-    cost_of_equity,
-    weighted_average_cost_of_capital,
-)
+from dcf.model.cost_of_equity import MarketInputs, MarketRate, cost_of_equity
+from dcf.model.wacc import compute_wacc, weighted_average_cost_of_capital
 
 REL = 1e-9
 NOW = datetime(2026, 11, 18, tzinfo=UTC)

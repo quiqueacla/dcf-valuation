@@ -1,0 +1,32 @@
+# Tipo de empresa y modelo de valoración según el sector y la industria de Yahoo Finance.
+# Se usan las claves de Yahoo info["sectorKey"] e info["industryKey"] (en minúsculas
+# con guiones), no los nombres que se muestran en el informe.
+#
+# Orden de búsqueda: primero la industria en todas las secciones, después el sector.
+# Lo que no encaje con ninguna regla es "industrial" y se valora con el modelo fcff.
+# Tipos válidos: banco, aseguradora, inmobiliaria.
+# model (opcional): "fcff" (por defecto) o "fcfe". Se puede forzar con dcf --model.
+#
+# Claves comprobadas con Yahoo el 2026-11-19: SAN.MC y JPM (banks-diversified),
+# CABK.MC (banks-regional), MAP.MC y ALV.DE (insurance-diversified),
+# MRL.MC y O (sector real-estate).
+
+[banco]
+model = "fcfe"
+industries = ["banks-diversified", "banks-regional"]
+
+[aseguradora]
+model = "fcfe"
+# Los corredores de seguros (insurance-brokers) no asumen riesgo: se quedan como industriales.
+industries = [
+    "insurance-diversified",
+    "insurance-life",
+    "insurance-property-casualty",
+    "insurance-reinsurance",
+    "insurance-specialty",
+]
+
+[inmobiliaria]
+# Sin modelo adecuado todavía: se valora con fcff y el informe lo avisa.
+# Todo el sector: SOCIMI/REIT (reit-*), promotoras y servicios inmobiliarios.
+sectors = ["real-estate"]

@@ -11,10 +11,11 @@ import pytest
 
 from dcf.company import Company, RevenueEstimate
 from dcf.model.assumptions import Assumptions
-from dcf.model.projection import EstimateCase, project_cash_flows
-from dcf.model.ratios import compute_historical_ratios
-from dcf.model.wacc import MarketInputs
-from dcf.valuation.dcf import compute_enterprise_value, equity_value, value_company
+from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.fcff_projection import project_cash_flows
+from dcf.model.fcff_ratios import compute_historical_ratios
+from dcf.model.revenue_projection import EstimateCase
+from dcf.valuation.fcff import compute_enterprise_value, equity_value, value_company
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName
 
 REL = 1e-9
@@ -65,7 +66,7 @@ def test_falta_estimacion_alta_usa_la_media(company: Company) -> None:
 def test_modo_ventas(ranged: Company, market_inputs: MarketInputs) -> None:
     s = _by_name(ranged, market_inputs, SALES)
     assert s[ScenarioName.BEARISH].estimate_case is EstimateCase.LOW
-    assert s[ScenarioName.BEARISH].wacc == pytest.approx(0.08125, rel=REL)
+    assert s[ScenarioName.BEARISH].discount_rate == pytest.approx(0.08125, rel=REL)
     assert s[ScenarioName.BEARISH].value_per_share == pytest.approx(
         _vps(ranged, EstimateCase.LOW, 0.08125, 0.02), rel=REL
     )
@@ -89,7 +90,7 @@ def test_modo_coste_alcista_invalido_si_g_alcanza_rf(
     # g 2,5 %: bajista g = 2 % y WACC 9,125 %; alcista g = 3 % = rf → no válido
     s = _by_name(ranged, market_inputs, COST, g=0.025)
     bear, bull = s[ScenarioName.BEARISH], s[ScenarioName.BULLISH]
-    assert bear.wacc == pytest.approx(0.09125, rel=REL)
+    assert bear.discount_rate == pytest.approx(0.09125, rel=REL)
     assert bear.terminal_growth == pytest.approx(0.02, rel=REL)
     assert bear.estimate_case is EstimateCase.AVERAGE
     assert bear.value_per_share == pytest.approx(
@@ -103,7 +104,7 @@ def test_modos_combinados(ranged: Company, market_inputs: MarketInputs) -> None:
     s = _by_name(ranged, market_inputs, BOTH, g=0.015)
     bull = s[ScenarioName.BULLISH]
     assert bull.estimate_case is EstimateCase.HIGH
-    assert bull.wacc == pytest.approx(0.07125, rel=REL)
+    assert bull.discount_rate == pytest.approx(0.07125, rel=REL)
     assert bull.terminal_growth == pytest.approx(0.02, rel=REL)
     assert bull.value_per_share == pytest.approx(
         _vps(ranged, EstimateCase.HIGH, 0.07125, 0.02), rel=REL

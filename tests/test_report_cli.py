@@ -9,10 +9,11 @@ from dcf.cli import main
 from dcf.company import Company
 from dcf.data.yahoo import save_raw
 from dcf.model.assumptions import Assumptions
-from dcf.model.wacc import MarketInputs
-from dcf.reports.markdown import _num, render_report
+from dcf.model.cost_of_equity import MarketInputs
+from dcf.reports.format import num as _num
+from dcf.reports.markdown import render_report
 from dcf.settings import load_settings
-from dcf.valuation.dcf import value_company
+from dcf.valuation.fcff import value_company
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 from tests.test_yahoo import _raw
 

@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from dcf.model.wacc import BetaMode, BetaSettings, MarketInputs, MarketRate
+from dcf.model.cost_of_equity import BetaMode, BetaSettings, MarketInputs, MarketRate
 
 DEFAULT_MARKET_INPUTS_PATH = Path("config/data/market_inputs.toml")
 """Ubicación por defecto (relativa a la raíz del repo). Plantilla en ``*.example.toml``."""

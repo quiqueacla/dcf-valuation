@@ -3,6 +3,19 @@
 Documento de referencia de las fórmulas del modelo. Se actualiza con cada cambio de fórmula.
 Tasas en decimal (0.08 = 8 %). Importes en EUR, en unidades (no millones).
 
+Hay dos modelos de valoración. El modelo se elige por tipo de empresa en
+`config/company_types.toml` (clave `model`) o se fuerza con `dcf --model`:
+
+| Modelo | Para | Flujo | Tasa | Secciones |
+|---|---|---|---|---|
+| `fcff` | Industriales (por defecto) | FCFF, flujo para accionistas y acreedores | WACC | §1-§9 |
+| `fcfe` | Bancos y aseguradoras | FCFE, flujo para el accionista | Ke | §10 (y las comunes de §1-§9) |
+
+Código: `model/fcff_*`, `model/wacc.py`, `valuation/fcff*.py`, `reports/fcff_markdown.py` para
+FCFF; `model/fcfe_projection.py`, `valuation/fcfe*.py`, `reports/fcfe_markdown.py` para FCFE.
+Común: `model/revenue_projection.py` (ventas y Net Income), `model/cost_of_equity.py` (Ke y
+beta), `valuation/discounting.py` (descuento, sensibilidad, escenarios), `reports/format.py`.
+
 ## 1. Datos históricos
 
 Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
@@ -19,10 +32,14 @@ Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
 
 ### Correspondencia con Yahoo Finance
 
+"Obligatorio" se refiere al modelo FCFF. Con FCFE solo son obligatorios ventas, Net Income,
+fondos propios, acciones diluidas y cotización; el resto se carga si está (`None` si no).
+
 | Dato del modelo | Fila de Yahoo | Estado | Tratamiento |
 |---|---|---|---|
 | Ventas | Total Revenue | income_stmt | Obligatorio |
 | Net Income | Net Income (atribuible a la dominante) | income_stmt | Obligatorio |
+| Fondos propios | Stockholders Equity (atribuibles a la dominante) | balance_sheet | Obligatorio en FCFE (cada año); opcional en FCFF |
 | Intereses | Interest Expense | income_stmt | Valor absoluto. Si falta: Kd por defecto × deuda total del año (ver abajo); sin Kd por defecto, error |
 | EBIT | EBIT | income_stmt | Obligatorio |
 | BAI | Pretax Income | income_stmt | Obligatorio |
@@ -53,6 +70,15 @@ Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
   son coherentes (Kd_i = Kd_defecto).
 - **Acciones diluidas:** media diluida del último ejercicio (NIC 33). No recoge recompras ni
   emisiones posteriores al cierre.
+- **Tipo de empresa:** se guardan `info.sector` e `info.industry` y se clasifica la empresa como
+  `industrial`, `banco`, `aseguradora` o `inmobiliaria` con la tabla `config/company_types.toml`,
+  que usa las claves `industryKey` (primero) y `sectorKey`. Lo que no encaja es `industrial`;
+  sin sector ni industria queda sin clasificar, con aviso. La misma tabla fija el modelo de
+  cada tipo (`model`): `fcfe` para bancos y aseguradoras, `fcff` para el resto. Modelos
+  adecuados: industrial → fcff; banco y aseguradora → fcfe; inmobiliaria → ninguno de los dos
+  (el valor está en los activos: NAV, FFO). Si el modelo aplicado no es adecuado para el tipo
+  (o el tipo no se ha clasificado), se valora igual, pero el informe y el resumen de la línea
+  de comandos lo avisan.
 
 ## 2. Ratios históricos
 
@@ -182,3 +208,54 @@ arriba) solo en la presentación.
 
 En una terminal el informe se muestra formateado con `rich`; si la salida se redirige o se usa
 `--raw`, se escribe el Markdown tal cual. El fichero `.md` guardado es siempre Markdown.
+
+Con el modelo FCFE el informe cambia la sección 2 (solo Ke, sin WACC ni Kd), la 3 (fondos
+propios, ROE y reinversión) y la 4 (sin puente deuda/caja; añade valor contable y P/VC).
+
+## 10. Modelo FCFE (bancos y aseguradoras)
+
+En una financiera la deuda (depósitos, reservas técnicas) es la materia prima del negocio, no
+su financiación, y el CFO incluye la variación de préstamos y depósitos (SAN.MC: CFO 2025 de
+−14.835 M€). Por eso no se usa FCFF ni WACC: se valora directamente el flujo del accionista.
+
+**Datos:** ventas, Net Income y fondos propios (Stockholders Equity) de cada ejercicio (§1).
+
+**Ratios históricos:** crecimiento de ventas y margen neto como en §2. Se informa el ROE de
+cada año (Net Income_i / FP_{i−1}), que el modelo no usa para proyectar.
+
+**Proyección:** ventas y Net Income exactamente como en §3 (analistas +1/+2, después el
+crecimiento medio; Net Income = ventas × margen medio). Los fondos propios crecen al ritmo de
+las ventas y ese crecimiento se financia reteniendo beneficio (capital regulatorio):
+
+- FP_0 = fondos propios del último ejercicio (debe ser > 0).
+- Reinversión_t = g_t · FP_{t−1}, con g_t el crecimiento de ventas del año t.
+- FCFE_t = Net Income_t − g_t · FP_{t−1}
+- FP_t = FP_{t−1} · (1 + g_t)
+
+**Descuento y valor terminal:** a Ke (CAPM, §4, misma selección de beta), a final de año.
+
+- FCFE_{N+1} = Net Income_N · (1 + g) − g · FP_N: el beneficio crece a g y solo se retiene lo
+  necesario para que los fondos propios crezcan a g. No se usa FCFE_N · (1 + g), porque la
+  reinversión del año N corresponde a g_N y no al g terminal.
+- VT = FCFE_{N+1} / (Ke − g), con g < Ke y g < rf (error si no se cumple).
+- Fondos propios = Σ FCFE_k / (1 + Ke)^k + VT / (1 + Ke)^N (debe ser > 0).
+
+**Valor por acción** = Fondos propios / acciones diluidas. No hay puente: el FCFE ya es del
+accionista y el Net Income es el atribuible a la dominante, así que no se restan minoritarios
+ni se suma caja. El informe añade el valor contable por acción (FP_0 / acciones) y el P/VC
+implícito como control de coherencia.
+
+**Sensibilidad y escenarios:** como en §7-§8, con Ke en lugar del WACC (el modo `coste`
+desplaza Ke con `wacc_shift`).
+
+**Limitaciones conocidas:**
+
+- Supone un ratio fondos propios / ventas constante; no modela el capital regulatorio (CET1 ×
+  activos ponderados por riesgo) ni el exceso de capital actual, que se reparte implícitamente
+  solo a través del valor terminal.
+- Con crecimientos de ventas altos la reinversión puede superar al beneficio y dar FCFE
+  negativos en el horizonte.
+- No resta dividendos preferentes ni cupones de instrumentos AT1, si Yahoo no los descuenta ya
+  del Net Income.
+- Las betas de Yahoo de algunas financieras son muy bajas (CABK.MC 0,12; MAP.MC 0,29 el
+  2026-11-19): conviene revisarlas con `[beta]` en `market_inputs.toml`.

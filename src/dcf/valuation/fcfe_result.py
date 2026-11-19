@@ -1,4 +1,4 @@
-"""Resultado completo y trazable de una valoración DCF.
+"""Resultado completo y trazable de una valoración con el modelo FCFE.
 
 Importes en EUR (unidades, ``float``); tasas en decimal (0.08 = 8 %).
 """
@@ -11,41 +11,30 @@ from datetime import datetime
 import pandas as pd
 
 from dcf.model.assumptions import Assumptions
-from dcf.model.projection import RevenueSource
-from dcf.model.ratios import HistoricalRatios
+from dcf.model.cost_of_equity import CostOfEquityResult
+from dcf.model.fcfe_projection import FcfeFlow, FcfeRatios
 from dcf.model.terminal_value import validate_terminal_growth
-from dcf.model.wacc import WaccResult
 from dcf.valuation.scenarios import ScenarioResult
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectedYear:
-    """Un año de la proyección explícita.
+class FcfeProjectedYear:
+    """Un año de la proyección FCFE, con su descuento.
 
     Attributes:
-        fiscal_year: Ejercicio proyectado.
-        revenue: Ventas proyectadas.
-        revenue_growth: Crecimiento de ventas respecto al año anterior.
-        revenue_source: Si las ventas vienen de analistas o del crecimiento medio.
-        net_income: Beneficio neto proyectado (ventas × margen neto medio).
-        fcff: Flujo de caja libre para la empresa (Net Income × FCFF/Net Income medio).
-        discount_factor: 1 / (1 + WACC)^t, con t = años desde la valoración.
-        present_value: Valor actual del FCFF (fcff × discount_factor).
+        flow: Ventas, Net Income, fondos propios, reinversión y FCFE del año.
+        discount_factor: 1 / (1 + Ke)^t, con t = años desde la valoración.
+        present_value: Valor actual del FCFE (fcfe × discount_factor).
     """
 
-    fiscal_year: int
-    revenue: float
-    revenue_growth: float
-    revenue_source: RevenueSource
-    net_income: float
-    fcff: float
+    flow: FcfeFlow
     discount_factor: float
     present_value: float
 
 
 @dataclass(frozen=True)
-class ValuationResult:
-    """Resultado de la valoración con todo lo necesario para reproducirla.
+class FcfeValuationResult:
+    """Resultado de la valoración FCFE con todo lo necesario para reproducirla.
 
     Attributes:
         ticker: Símbolo de la compañía valorada.
@@ -54,19 +43,20 @@ class ValuationResult:
         valuation_date: Momento en que se calculó la valoración, en UTC.
         code_version: Versión del paquete ``dcf`` que produjo el resultado.
         assumptions: Supuestos completos utilizados.
-        ratios: Medias históricas utilizadas en la proyección.
-        wacc: WACC con todos sus componentes (rf, PRM, beta, Ke, Kd, t, pesos).
+        ratios: Ratios históricos (crecimiento, margen, fondos propios, ROE).
+        cost_of_equity: Ke con rf, PRM y beta: tasa de descuento del FCFE.
         projections: Años de la proyección explícita, en orden.
         projection_growth: Crecimiento de ventas aplicado a los años sin estimación de
             analistas (media de crecimientos históricos y de analistas).
+        terminal_fcfe: FCFE del año N+1: NI_N · (1 + g) − g · FP_N.
         terminal_value: Valor terminal (Gordon) al final del horizonte, sin descontar.
         terminal_value_present: Valor terminal descontado a hoy.
-        enterprise_value: Valor de empresa (VA de los FCFF + VA del valor terminal).
-        equity_value: Valor de los fondos propios tras el puente deuda/caja/minoritarios.
+        equity_value: Valor de los fondos propios (VA de los FCFE + VA del valor
+            terminal). No hay puente: el FCFE ya es el flujo del accionista.
         value_per_share: Valor intrínseco por acción diluida, en EUR.
-        sensitivity: Valor por acción por WACC (filas) × crecimiento terminal (columnas).
+        sensitivity: Valor por acción por Ke (filas) × crecimiento terminal (columnas).
         scenarios: Escenarios bajista, neutro y alcista (vacío si no se pidieron).
-        warnings: Avisos de la valoración (proyección del escenario central).
+        warnings: Avisos de la valoración (Ke y proyección del escenario central).
     """
 
     ticker: str
@@ -75,25 +65,26 @@ class ValuationResult:
     valuation_date: datetime
     code_version: str
     assumptions: Assumptions
-    ratios: HistoricalRatios
-    wacc: WaccResult
-    projections: tuple[ProjectedYear, ...]
+    ratios: FcfeRatios
+    cost_of_equity: CostOfEquityResult
+    projections: tuple[FcfeProjectedYear, ...]
     projection_growth: float
+    terminal_fcfe: float
     terminal_value: float
     terminal_value_present: float
-    enterprise_value: float
     equity_value: float
     value_per_share: float
     sensitivity: pd.DataFrame
     scenarios: tuple[ScenarioResult, ...] = ()
     warnings: tuple[str, ...] = ()
 
-    # Valida fechas con zona, g < WACC y g < rf, horizonte coherente y VE positivo.
+    # Valida fechas con zona, g < Ke y g < rf, horizonte coherente y fondos propios positivos.
     def __post_init__(self) -> None:
         validate_terminal_growth(
             self.assumptions.terminal_growth,
-            self.wacc.wacc,
-            self.wacc.market_inputs.risk_free_rate.value,
+            self.cost_of_equity.cost_of_equity,
+            self.cost_of_equity.market_inputs.risk_free_rate.value,
+            "Ke",
         )
         for name in ("data_date", "valuation_date"):
             value: datetime = getattr(self, name)
@@ -104,13 +95,11 @@ class ValuationResult:
                 f"Se esperaban {self.assumptions.projection_years} años proyectados, "
                 f"recibidos {len(self.projections)}"
             )
-        if self.enterprise_value <= 0:
-            raise ValueError(
-                f"enterprise_value debe ser positivo, recibido {self.enterprise_value}"
-            )
+        if self.equity_value <= 0:
+            raise ValueError(f"equity_value debe ser positivo, recibido {self.equity_value}")
 
-    # Peso del valor terminal descontado sobre el valor de empresa (0-1).
+    # Peso del valor terminal descontado sobre el valor de los fondos propios (0-1).
     @property
     def terminal_value_weight(self) -> float:
-        """Fracción del valor de empresa que aporta el valor terminal (0.7 = 70 %)."""
-        return self.terminal_value_present / self.enterprise_value
+        """Fracción del valor de los fondos propios que aporta el valor terminal."""
+        return self.terminal_value_present / self.equity_value

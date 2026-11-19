@@ -12,7 +12,7 @@ from dcf.company import (
     HistoricalYear,
     RevenueEstimate,
 )
-from dcf.model.wacc import MarketInputs, MarketRate
+from dcf.model.cost_of_equity import MarketInputs, MarketRate
 
 DATA_DATE = datetime(2026, 11, 18, tzinfo=UTC)
 

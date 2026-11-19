@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from dcf import cli
-from dcf.company import Company
+from dcf.company import Company, ValuationModel
+from dcf.data.company_types import CompanyTypeRules
 from dcf.data.yahoo import build_company
-from dcf.model.wacc import MarketRate
+from dcf.model.cost_of_equity import MarketRate
 from dcf.settings import AppSettings, apply_overrides, parse_rate
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 from tests.test_report_cli import MARKET, SETTINGS, _files
@@ -115,10 +116,19 @@ def test_alias_cortos(tmp_path: Path) -> None:
     assert (tmp_path / "corto" / "SYN_20261118T120000Z.md").is_file()
 
 
-def _fake_fetch(ticker: str, kd: MarketRate | None, cache_dir: Path) -> Company:
+def _fake_fetch(
+    ticker: str,
+    kd: MarketRate | None,
+    cache_dir: Path,
+    type_rules: CompanyTypeRules,
+    model: ValuationModel | None,
+) -> Company:
     if ticker == "MALO":
         raise ValueError("Yahoo: falta la fila 'Total Revenue' en income_stmt")
-    return build_company(dataclasses.replace(_raw(), ticker=ticker), kd)
+    raw = dataclasses.replace(_raw(), ticker=ticker)
+    if ticker == "BANCO":
+        raw = dataclasses.replace(raw, info={**raw.info, "industryKey": "banks-regional"})
+    return build_company(raw, kd, type_rules=type_rules, model=model)
 
 
 def test_varios_tickers_con_fichero_y_un_error(
@@ -148,3 +158,47 @@ def test_varios_tickers_con_fichero_y_un_error(
         "AAA_20261118T120000Z.md",
         "BBB_20261118T120000Z.md",
     ]
+
+
+def _two_tickers(tmp_path: Path, *extra: str) -> list[str]:
+    (tmp_path / "s.toml").write_text(SETTINGS, encoding="utf-8")
+    (tmp_path / "m.toml").write_text(MARKET, encoding="utf-8")
+    return [
+        "AAA",
+        "BANCO",
+        "-c",
+        str(tmp_path / "s.toml"),
+        "-m",
+        str(tmp_path / "m.toml"),
+        "-o",
+        str(tmp_path / "out"),
+        *extra,
+    ]
+
+
+# Línea del resumen que empieza por el ticker.
+def _line(out: str, ticker: str) -> str:
+    return next(line for line in out.splitlines() if line.startswith(f"{ticker}:"))
+
+
+def test_banco_se_valora_con_fcfe_por_la_tabla(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "fetch_company", _fake_fetch)
+    assert cli.main(_two_tickers(tmp_path), now=NOW) == 0
+    out = capsys.readouterr().out
+    assert "fcff, WACC" in _line(out, "AAA") and "AVISO" not in _line(out, "AAA")
+    assert "fcfe, Ke" in _line(out, "BANCO") and "AVISO" not in _line(out, "BANCO")
+    report = (tmp_path / "out" / "BANCO_20261118T120000Z.md").read_text(encoding="utf-8")
+    assert "# Valoración DCF (FCFE)" in report and "Aviso de modelo" not in report
+
+
+def test_modelo_forzado_avisa_si_no_es_adecuado(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "fetch_company", _fake_fetch)
+    assert cli.main(_two_tickers(tmp_path, "--model", "fcff"), now=NOW) == 0
+    banco = _line(capsys.readouterr().out, "BANCO")
+    assert "fcff, WACC" in banco and "AVISO: tipo banco, el modelo fcff" in banco
+    report = (tmp_path / "out" / "BANCO_20261118T120000Z.md").read_text(encoding="utf-8")
+    assert "**Aviso de modelo:** Empresa de tipo banco" in report

@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
-from dcf.model.projection import EstimateCase
+from dcf.model.revenue_projection import EstimateCase
 
 
 class ScenarioMode(StrEnum):
@@ -58,10 +58,12 @@ class ScenarioResult:
     Attributes:
         name: Bajista, neutro o alcista.
         estimate_case: Estimación de ventas de analistas usada para +1 y +2.
-        wacc: WACC del escenario, en decimal.
+        discount_rate: Tasa de descuento del escenario en decimal: WACC en FCFF, Ke en FCFE.
         terminal_growth: g terminal del escenario, en decimal.
-        enterprise_value: Valor de empresa en EUR; ``None`` si el escenario no es válido.
-        terminal_value_weight: Peso del VT descontado sobre el VE; ``None`` si no es válido.
+        total_value: Valor descontado en EUR: valor de empresa en FCFF, fondos propios en
+            FCFE; ``None`` si el escenario no es válido.
+        terminal_value_weight: Peso del VT descontado sobre ``total_value``; ``None`` si
+            no es válido.
         value_per_share: Valor por acción diluida en EUR; ``None`` si no es válido.
         error: Motivo por el que el escenario no es válido (p. ej. g ≥ rf).
         warnings: Avisos de la proyección del escenario.
@@ -69,9 +71,9 @@ class ScenarioResult:
 
     name: ScenarioName
     estimate_case: EstimateCase
-    wacc: float
+    discount_rate: float
     terminal_growth: float
-    enterprise_value: float | None
+    total_value: float | None
     terminal_value_weight: float | None
     value_per_share: float | None
     error: str | None = None

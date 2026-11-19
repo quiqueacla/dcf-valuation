@@ -9,8 +9,9 @@ import dataclasses
 import pytest
 
 from dcf.company import Company, RevenueEstimate
-from dcf.model.projection import RevenueSource, project_cash_flows
-from dcf.model.ratios import compute_historical_ratios
+from dcf.model.fcff_projection import project_cash_flows
+from dcf.model.fcff_ratios import compute_historical_ratios
+from dcf.model.revenue_projection import RevenueSource
 
 REL = 1e-9
 AVG_C = 1.065378474830954

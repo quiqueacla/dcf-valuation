@@ -6,10 +6,11 @@ import pytest
 
 from dcf.company import Company
 from dcf.model.assumptions import Assumptions
-from dcf.model.projection import RevenueSource
-from dcf.model.ratios import HistoricalRatios
-from dcf.model.wacc import MarketInputs, compute_wacc
-from dcf.valuation.result import ProjectedYear, ValuationResult
+from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.fcff_ratios import HistoricalRatios
+from dcf.model.revenue_projection import RevenueSource
+from dcf.model.wacc import compute_wacc
+from dcf.valuation.fcff_result import ProjectedYear, ValuationResult
 
 NOW = datetime(2026, 11, 18, tzinfo=UTC)
 

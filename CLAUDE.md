@@ -63,6 +63,7 @@ data/cache/    # Respuestas descargadas. No editar a mano
 
 ## 6. Reglas del modelo DCF
 
+- **Modelos:** `fcff` (industriales: FCFF descontado al WACC) y `fcfe` (bancos y aseguradoras: FCFE descontado a Ke, sin puente deuda/caja). El modelo de cada tipo de empresa está en `config/company_types.toml`; `dcf --model` lo fuerza. Fórmulas de referencia en `docs/metodologia.md` (§1-§9 FCFF, §10 FCFE). Las reglas siguientes de WACC y puente son del FCFF; en FCFE la tasa es Ke y g < Ke.
 - **Descuento:** FCFF descontado al WACC. Fórmula de referencia documentada en `docs/metodologia.md`.
 - **Proyección (modelo por defecto):** horizonte de 5 años. Ventas +1 (ejercicio en curso) y +2 desde estimaciones de analistas; si no hay, crecimiento medio histórico. Años +3..+5 con la media de los crecimientos históricos y de +1/+2. Net Income = ventas × margen neto medio histórico; FCFF = Net Income × media histórica de FCFF/Net Income. Detalle en `docs/metodologia.md`.
 - **WACC:** coste del capital con CAPM (rf, beta, prima de riesgo) y coste de la deuda neto de impuestos. Documenta cada fuente de rf y prima.
@@ -77,7 +78,7 @@ data/cache/    # Respuestas descargadas. No editar a mano
 - **Clase base** Genera una clase Company donde se alamacenen todos los datos necesarios para el cálculo del DCF. Debe haber: informacion de la empresa, Lista con los históricos de los útlimos años, lista para el cálculo del coste de deuda con los datos de la empresa (Para cada año historico: Deuda total, gastos en intereses, EBIT, provision de impuestos, Y el Taxrate final)
 - **Data** Almacenado en el data del repo los archivos .py para descargar los datos y rellenar la Clase Company en su caso. De momento habrá uno para yahoofinance
 - **Model:** 
-  - Implementación del modelo de proyecciones. De momento habrá uno. Pero podrían aparecer nuevos.
+  - Implementación del modelo de proyecciones. Hay dos: FCFF (`model/fcff_*.py`, `valuation/fcff*.py`, `reports/fcff_markdown.py`) y FCFE (`model/fcfe_projection.py`, `valuation/fcfe*.py`, `reports/fcfe_markdown.py`). Lo común va en `model/revenue_projection.py`, `model/cost_of_equity.py`, `valuation/discounting.py`, `valuation/run.py` (elige modelo) y `reports/format.py`. Un modelo nuevo sigue el mismo patrón de nombres.
   - Implementacion del modelo para el calulo del WACC
 - **Presentacion resultados** Almacenado en reports, presentará los resultados intermedios y finales de la valuation.
 
@@ -115,6 +116,9 @@ Registra decisiones de modelado no obvias, con fecha y motivo.
 - [2026-11-18] Interest Expense ausente → intereses = Kd por defecto × deuda total del año, con Kd de la sección opcional `[default_cost_of_debt]` de `market_inputs.toml` (con fuente y fecha) y aviso; sin esa sección, error. Motivo: propuesta del usuario; Yahoo no publica intereses de algunas empresas (p. ej. AAPL desde 2024). Alternativas descartadas: error siempre; 0 y excluir del Kd.
 - [2026-11-18] Escenarios configurables en `config/settings.toml`: modo `ventas` (estimaciones baja/media/alta de analistas; media si falta) y modo `coste` (WACC ± 1 punto, g ∓ 0,5 puntos), combinables. Motivo: elección del usuario; desplazamientos por defecto propuestos por el agente. Alternativas descartadas: solo desplazar WACC y g; desplazar el crecimiento.
 - [2026-11-18] Informe en consola + Markdown (`output/`), importes en M€; redondeo comercial solo en presentación. Motivo: elección del usuario. Alternativas descartadas: Excel, HTML.
+- [2026-11-19] Company guarda sector e industria de Yahoo y un tipo de empresa (`industrial`, `banco`, `aseguradora`, `inmobiliaria`) según la tabla `config/company_types.toml` (industryKey, luego sectorKey; sin regla = industrial; sin datos = sin clasificar con aviso). Los no industriales se valoran con el modelo FCFF actual pero con aviso en el informe y el resumen. Motivo: el modelo está pensado para industriales; base para modelos por tipo. Alternativas descartadas: solo sector/industria; error para no industriales.
+- [2026-11-19] Modelo FCFE para bancos y aseguradoras (`model = "fcfe"` en `company_types.toml`): ventas y Net Income como en FCFF; FCFE_t = NI_t − g_t · FP_{t−1} con FP (Stockholders Equity) creciendo al ritmo de las ventas; descuento a Ke; VT con FCFE_{N+1} = NI_N·(1+g) − g·FP_N; valor por acción = fondos propios / acciones diluidas, sin puente. El modelo actual pasa a llamarse FCFF y sus módulos llevan prefijo `fcff_`. Motivo: elección del usuario (enfoque de Damodaran para bancos). Alternativas descartadas: FCFE = NI × payout histórico; FCFE clásico (CFO − Capex + deuda neta), sin sentido en bancos; NI = ROE × FP; FCFE solo para bancos.
+- [2026-11-19] El valor terminal FCFE usa FCFE_{N+1} = NI_N·(1+g) − g·FP_N y no FCFE_N·(1+g). Motivo: la reinversión del año N corresponde al crecimiento g_N, no al g terminal; propuesta del agente por coherencia. Alternativas descartadas: FCFE_N·(1+g).
 - [2026-11-18] Acciones diluidas = Diluted Average Shares del último ejercicio. Motivo: único dato diluido de Yahoo. Alternativas descartadas: sharesOutstanding (básicas).
 
 ## 10. Contexto adicional

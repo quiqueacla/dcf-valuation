@@ -13,16 +13,21 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dcf.company import Company
+from dcf.company import Company, ValuationModel, model_suitability_warning
+from dcf.data.company_types import (
+    DEFAULT_COMPANY_TYPES_PATH,
+    CompanyTypeRules,
+    load_company_type_rules,
+)
 from dcf.data.market_inputs import DEFAULT_MARKET_INPUTS_PATH, load_market_inputs
 from dcf.data.yahoo import DEFAULT_CACHE_DIR, build_company, fetch_company, load_raw
 from dcf.model.assumptions import Assumptions
-from dcf.model.wacc import MarketInputs, MarketRate
+from dcf.model.cost_of_equity import MarketInputs, MarketRate
 from dcf.reports.console import print_report
 from dcf.reports.markdown import render_report
 from dcf.settings import DEFAULT_SETTINGS_PATH, AppSettings, apply_overrides, load_settings
-from dcf.valuation.dcf import value_company
-from dcf.valuation.result import ValuationResult
+from dcf.valuation.fcfe_result import FcfeValuationResult
+from dcf.valuation.run import AnyValuationResult, run_valuation
 
 DEFAULT_OUTPUT_DIR = Path("output")
 
@@ -61,6 +66,19 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_MARKET_INPUTS_PATH,
         help=f"rf, PRM y Kd por defecto (por defecto {DEFAULT_MARKET_INPUTS_PATH})",
+    )
+    p.add_argument(
+        "-t",
+        "--company-types",
+        type=Path,
+        default=DEFAULT_COMPANY_TYPES_PATH,
+        help=f"Tabla sector/industria → tipo de empresa (por defecto {DEFAULT_COMPANY_TYPES_PATH})",
+    )
+    p.add_argument(
+        "--model",
+        choices=[m.value for m in ValuationModel],
+        help="Fuerza el modelo de valoración (por defecto, el de la tabla de tipos: fcfe para "
+        "bancos y aseguradoras, fcff para el resto)",
     )
     p.add_argument(
         "-o",
@@ -126,14 +144,19 @@ def _all_tickers(args: argparse.Namespace) -> list[str]:
 
 # Carga la compañía desde la caché indicada o descargándola de Yahoo.
 def _load_company(
-    ticker: str, from_cache: Path | None, cache_dir: Path, kd: MarketRate | None
+    ticker: str,
+    from_cache: Path | None,
+    cache_dir: Path,
+    kd: MarketRate | None,
+    type_rules: CompanyTypeRules,
+    model: ValuationModel | None,
 ) -> Company:
     if from_cache is None:
-        return fetch_company(ticker, kd, cache_dir)  # pragma: no cover - requiere red
+        return fetch_company(ticker, kd, cache_dir, type_rules, model)
     raw = load_raw(from_cache)
     if raw.ticker != ticker:
         raise ValueError(f"La caché {from_cache} es de {raw.ticker}, no de {ticker}")
-    return build_company(raw, kd)
+    return build_company(raw, kd, type_rules=type_rules, model=model)
 
 
 # Valora un ticker y guarda su informe; devuelve compañía, resultado y ruta del informe.
@@ -144,11 +167,15 @@ def _value_one(
     growth: float,
     market: MarketInputs,
     moment: datetime,
-) -> tuple[Company, ValuationResult, Path]:
-    company = _load_company(ticker, args.from_cache, args.cache_dir, market.default_cost_of_debt)
+    type_rules: CompanyTypeRules,
+) -> tuple[Company, AnyValuationResult, Path]:
+    model = None if args.model is None else ValuationModel(args.model)
+    company = _load_company(
+        ticker, args.from_cache, args.cache_dir, market.default_cost_of_debt, type_rules, model
+    )
     assumptions = Assumptions(terminal_growth=growth, projection_years=settings.projection_years)
     scenarios = None if args.no_extras else settings.scenarios
-    result = value_company(company, market, assumptions, moment, scenarios)
+    result = run_valuation(company, market, assumptions, moment, scenarios)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     path = args.output_dir / f"{ticker}_{moment:%Y%m%dT%H%M%SZ}.md"
     path.write_text(render_report(company, result), encoding="utf-8")
@@ -156,15 +183,25 @@ def _value_one(
 
 
 # Línea de resumen de un ticker valorado (para ejecuciones con varios tickers).
-def _summary(company: Company, result: ValuationResult, path: Path) -> str:
+def _summary(company: Company, result: AnyValuationResult, path: Path) -> str:
     price = company.balance.share_price
+    rate = (
+        f"Ke {result.cost_of_equity.cost_of_equity:.2%}"
+        if isinstance(result, FcfeValuationResult)
+        else f"WACC {result.wacc.wacc:.2%}"
+    )
+    model = company.info.valuation_model.value
     parts = [
         f"{result.ticker}: {result.value_per_share:,.2f} € por acción "
-        f"(cotización {price:,.2f} €, WACC {result.wacc.wacc:.2%})"
+        f"(cotización {price:,.2f} €, {model}, {rate})"
     ]
     for s in result.scenarios:
         value = "no válido" if s.value_per_share is None else f"{s.value_per_share:,.2f} €"
         parts.append(f"{s.name}: {value}")
+    kind = company.info.company_type
+    if model_suitability_warning(kind, company.info.valuation_model) is not None:
+        label = "sin clasificar" if kind is None else kind.value
+        parts.append(f"AVISO: tipo {label}, el modelo {model} puede no ser adecuado")
     return " | ".join(parts) + f"\n    informe: {path}"
 
 
@@ -200,6 +237,7 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
                 f"o fija terminal_growth en {args.settings}"
             )
         market = load_market_inputs(args.market_inputs)
+        type_rules = load_company_type_rules(args.company_types)
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -208,7 +246,9 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
     failures = 0
     for ticker in tickers:
         try:
-            company, result, path = _value_one(ticker, args, settings, growth, market, moment)
+            company, result, path = _value_one(
+                ticker, args, settings, growth, market, moment, type_rules
+            )
         except (ValueError, FileNotFoundError) as exc:
             failures += 1
             print(f"Error en {ticker}: {exc}", file=sys.stderr)

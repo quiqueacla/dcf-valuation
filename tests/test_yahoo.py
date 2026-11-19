@@ -16,8 +16,9 @@ import pytest
 
 from dcf.data.yahoo import YahooRawData, build_company, load_raw, normalize_price_currency, save_raw
 from dcf.model.assumptions import Assumptions
-from dcf.model.wacc import MarketInputs, MarketRate, compute_wacc
-from dcf.valuation.dcf import value_company
+from dcf.model.cost_of_equity import MarketInputs, MarketRate
+from dcf.model.wacc import compute_wacc
+from dcf.valuation.fcff import value_company
 
 REL = 1e-9
 FX = 0.9
@@ -55,6 +56,7 @@ def _raw() -> YahooRawData:
         {
             "Total Debt": [200.0] * 5,
             "Cash Cash Equivalents And Short Term Investments": [100.0] * 5,
+            "Stockholders Equity": [610.0, 550.0, 500.0, 460.0, 420.0],
         }
     )
     estimates = pd.DataFrame(
@@ -71,6 +73,10 @@ def _raw() -> YahooRawData:
         "currency": "USD",
         "currentPrice": 11.0,
         "beta": 1.2,
+        "sector": "Technology",
+        "sectorKey": "technology",
+        "industry": "Consumer Electronics",
+        "industryKey": "consumer-electronics",
     }
     return YahooRawData("SYN", FETCHED, info, income, cashflow, balance, estimates, {"USD": FX})
 

@@ -10,7 +10,7 @@ import dataclasses
 import pytest
 
 from dcf.company import Company
-from dcf.model.ratios import compute_historical_ratios, effective_tax_rate, historical_fcff
+from dcf.model.fcff_ratios import compute_historical_ratios, effective_tax_rate, historical_fcff
 
 REL = 1e-9
 

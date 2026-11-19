@@ -26,12 +26,16 @@ from dcf.company import (
     BalanceSnapshot,
     Company,
     CompanyInfo,
+    CompanyType,
     DebtCostYear,
     HistoricalYear,
     RevenueEstimate,
+    ValuationModel,
+    model_suitability_warning,
 )
-from dcf.defaults import ANALYST_ESTIMATE_YEARS, HISTORICAL_YEARS
-from dcf.model.wacc import MarketRate
+from dcf.data.company_types import CompanyTypeRules, classify_company
+from dcf.defaults import ANALYST_ESTIMATE_YEARS, DEFAULT_VALUATION_MODEL, HISTORICAL_YEARS
+from dcf.model.cost_of_equity import MarketRate
 
 SOURCE = "yahoo_finance"
 DEFAULT_CACHE_DIR = Path("data/cache")
@@ -54,6 +58,7 @@ ROW_DEBT_REPAYMENT = "Repayment Of Debt"
 ROW_TOTAL_DEBT = "Total Debt"
 ROW_CASH = "Cash Cash Equivalents And Short Term Investments"
 ROW_MINORITY = "Minority Interest"
+ROW_EQUITY = "Stockholders Equity"
 
 # Periodos de revenue_estimate: ejercicio en curso (+1) y siguiente (+2).
 ESTIMATE_PERIODS = ("0y", "+1y")
@@ -346,29 +351,109 @@ def _interest(
     return estimated
 
 
+# Texto opcional de info (sector, industria...): None si falta o está vacío.
+def _info_text(info: dict[str, Any], key: str) -> str | None:
+    value = info.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+# Sector, industria y tipo de empresa; aviso si Yahoo no publica sector ni industria.
+def _classification(
+    info: dict[str, Any], rules: CompanyTypeRules | None, warnings: list[str]
+) -> tuple[str | None, str | None, CompanyType | None]:
+    sector, industry = _info_text(info, "sector"), _info_text(info, "industry")
+    if rules is None:
+        return sector, industry, None
+    company_type = classify_company(
+        _info_text(info, "sectorKey"), _info_text(info, "industryKey"), rules
+    )
+    if company_type is None:
+        warnings.append("Yahoo no publica sector ni industria: tipo de empresa sin clasificar")
+    return sector, industry, company_type
+
+
+# Modelo de valoración: el forzado, el de la tabla de tipos o, en su defecto, el FCFF.
+def _choose_model(
+    company_type: CompanyType | None,
+    rules: CompanyTypeRules | None,
+    model: ValuationModel | None,
+) -> ValuationModel:
+    if model is not None:
+        return model
+    if rules is not None:
+        return rules.model_for(company_type)
+    return ValuationModel(DEFAULT_VALUATION_MODEL)
+
+
 # Valida los datos crudos y construye Company con todos los importes en EUR.
 def build_company(
     raw: YahooRawData,
     default_cost_of_debt: MarketRate | None = None,
     historical_years: int = HISTORICAL_YEARS,
+    type_rules: CompanyTypeRules | None = None,
+    model: ValuationModel | None = None,
 ) -> Company:
     """Construye la compañía a partir de la respuesta cruda de Yahoo.
+
+    Los datos obligatorios dependen del modelo: el FCFF exige flujos de caja, deuda,
+    caja, EBIT, BAI e impuestos; el FCFE exige los fondos propios (Stockholders Equity)
+    y deja el resto como opcional (``None`` si Yahoo no lo publica).
 
     Args:
         raw: Datos crudos (descargados o leídos de la caché).
         default_cost_of_debt: Kd antes de impuestos (de ``market_inputs.toml``) para
             estimar los intereses de los ejercicios en que Yahoo no los publica:
             intereses = Kd por defecto × deuda total del ejercicio. ``None`` = error.
+            Solo se usa en FCFF.
         historical_years: Ejercicios históricos a tomar (los más recientes).
+        type_rules: Tabla de tipos de empresa (``config/company_types.toml``) para
+            clasificar por ``sectorKey`` e ``industryKey`` y elegir el modelo. ``None``
+            = no se clasifica (``company_type`` queda en ``None``).
+        model: Modelo forzado; ``None`` = el de la tabla para el tipo de empresa (o
+            fcff sin tabla).
 
     Returns:
         Compañía con importes en EUR y avisos de carga en ``info.data_warnings``.
 
     Raises:
-        ValueError: Si falta algún dato obligatorio, un tipo de cambio, o los
-            intereses de un ejercicio sin ``default_cost_of_debt``.
+        ValueError: Si falta algún dato obligatorio para el modelo, un tipo de cambio,
+            o los intereses de un ejercicio sin ``default_cost_of_debt`` (FCFF). Si el
+            modelo no es adecuado para el tipo de empresa, el mensaje lo indica.
     """
     warnings: list[str] = []
+    classification = _classification(raw.info, type_rules, warnings)
+    chosen = _choose_model(classification[2], type_rules, model)
+    try:
+        return _build_company(
+            raw, default_cost_of_debt, historical_years, classification, chosen, warnings
+        )
+    except ValueError as exc:
+        company_type = classification[2]
+        note = model_suitability_warning(company_type, chosen) if company_type else None
+        if note is None:
+            raise
+        raise ValueError(f"{exc}. {note}") from exc
+
+
+# Importe opcional de un estado en EUR (valor absoluto si se pide); None si falta.
+def _optional(
+    df: pd.DataFrame, row: str, column: pd.Timestamp, fx: float, absolute: bool = False
+) -> float | None:
+    value = _cell(df, row, column)
+    if value is None:
+        return None
+    return (abs(value) if absolute else value) * fx
+
+
+# Cuerpo de build_company: estados, balance, estimaciones e información de la compañía.
+def _build_company(
+    raw: YahooRawData,
+    default_cost_of_debt: MarketRate | None,
+    historical_years: int,
+    classification: tuple[str | None, str | None, CompanyType | None],
+    model: ValuationModel,
+    warnings: list[str],
+) -> Company:
     financial_currency = str(_info_value(raw.info, "financialCurrency", str))
     price_currency, price_unit = normalize_price_currency(
         str(_info_value(raw.info, "currency", str))
@@ -378,17 +463,20 @@ def build_company(
 
     columns = _select_columns(raw, historical_years, warnings)
     inc, cf, bs = raw.income_stmt, raw.cashflow, raw.balance_sheet
+    fcff = model is ValuationModel.FCFF
 
     historicals: list[HistoricalYear] = []
     debt_cost: list[DebtCostYear] = []
     for col in columns:
-        total_debt = _required(bs, BALANCE, ROW_TOTAL_DEBT, col) * fx
-        interest = _interest(inc, col, total_debt, fx, default_cost_of_debt, warnings)
-        historicals.append(
-            HistoricalYear(
+        revenue = _required(inc, INCOME, ROW_REVENUE, col) * fx
+        net_income = _required(inc, INCOME, ROW_NET_INCOME, col) * fx
+        if fcff:
+            total_debt = _required(bs, BALANCE, ROW_TOTAL_DEBT, col) * fx
+            interest = _interest(inc, col, total_debt, fx, default_cost_of_debt, warnings)
+            year = HistoricalYear(
                 fiscal_year=col.year,
-                revenue=_required(inc, INCOME, ROW_REVENUE, col) * fx,
-                net_income=_required(inc, INCOME, ROW_NET_INCOME, col) * fx,
+                revenue=revenue,
+                net_income=net_income,
                 operating_cash_flow=_required(cf, CASHFLOW, ROW_CFO, col) * fx,
                 capital_expenditure=abs(_required(cf, CASHFLOW, ROW_CAPEX, col)) * fx,
                 interest_expense=interest,
@@ -398,25 +486,46 @@ def build_company(
                     _zero_if_missing(cf, CASHFLOW, ROW_DEBT_REPAYMENT, col, warnings)
                 )
                 * fx,
+                stockholders_equity=_optional(bs, ROW_EQUITY, col, fx),
             )
-        )
-        debt_cost.append(
-            DebtCostYear(
+            debt_cost.append(
+                DebtCostYear(
+                    fiscal_year=col.year,
+                    total_debt=total_debt,
+                    interest_expense=interest,
+                    ebit=_required(inc, INCOME, ROW_EBIT, col) * fx,
+                    pretax_income=_required(inc, INCOME, ROW_PRETAX, col) * fx,
+                    tax_provision=_required(inc, INCOME, ROW_TAX, col) * fx,
+                )
+            )
+        else:
+            year = HistoricalYear(
                 fiscal_year=col.year,
-                total_debt=total_debt,
-                interest_expense=interest,
-                ebit=_required(inc, INCOME, ROW_EBIT, col) * fx,
-                pretax_income=_required(inc, INCOME, ROW_PRETAX, col) * fx,
-                tax_provision=_required(inc, INCOME, ROW_TAX, col) * fx,
+                revenue=revenue,
+                net_income=net_income,
+                operating_cash_flow=_optional(cf, ROW_CFO, col, fx),
+                capital_expenditure=_optional(cf, ROW_CAPEX, col, fx, absolute=True),
+                interest_expense=_optional(inc, ROW_INTEREST, col, fx, absolute=True),
+                debt_issuance=_optional(cf, ROW_DEBT_ISSUANCE, col, fx, absolute=True),
+                debt_repayment=_optional(cf, ROW_DEBT_REPAYMENT, col, fx, absolute=True),
+                stockholders_equity=_required(bs, BALANCE, ROW_EQUITY, col) * fx,
             )
-        )
+        historicals.append(year)
 
     last = columns[-1]
     price = float(_info_value(raw.info, "currentPrice", (int, float))) * price_unit * price_fx
     balance = BalanceSnapshot(
         balance_date=datetime(last.year, last.month, last.day, tzinfo=UTC),
-        cash=_required(bs, BALANCE, ROW_CASH, last) * fx,
-        total_debt=_required(bs, BALANCE, ROW_TOTAL_DEBT, last) * fx,
+        cash=(
+            _required(bs, BALANCE, ROW_CASH, last) * fx
+            if fcff
+            else _optional(bs, ROW_CASH, last, fx)
+        ),
+        total_debt=(
+            _required(bs, BALANCE, ROW_TOTAL_DEBT, last) * fx
+            if fcff
+            else _optional(bs, ROW_TOTAL_DEBT, last, fx)
+        ),
         minority_interest=_zero_if_missing(bs, BALANCE, ROW_MINORITY, last, warnings) * fx,
         diluted_shares=_required(inc, INCOME, ROW_DILUTED_SHARES, last),
         share_price=price,
@@ -432,6 +541,7 @@ def build_company(
     uses_fx = financial_currency != WORKING_CURRENCY or price_currency != WORKING_CURRENCY
     uses_fx = uses_fx or any(c != WORKING_CURRENCY for c in raw.fx_to_eur)
     name = raw.info.get("longName") or raw.info.get("shortName") or raw.ticker
+    sector, industry, company_type = classification
     info = CompanyInfo(
         ticker=raw.ticker,
         name=str(name),
@@ -443,6 +553,10 @@ def build_company(
         price_currency=price_currency,
         price_fx_rate_to_eur=price_fx,
         data_warnings=tuple(warnings),
+        sector=sector,
+        industry=industry,
+        company_type=company_type,
+        valuation_model=model,
     )
     return Company(
         info=info,
@@ -458,6 +572,8 @@ def fetch_company(
     ticker: str,
     default_cost_of_debt: MarketRate | None = None,
     cache_dir: Path = DEFAULT_CACHE_DIR,
+    type_rules: CompanyTypeRules | None = None,
+    model: ValuationModel | None = None,
 ) -> Company:  # pragma: no cover - requiere red
     """Descarga un ticker de Yahoo, guarda la respuesta en caché y construye ``Company``.
 
@@ -465,10 +581,12 @@ def fetch_company(
         ticker: Símbolo de Yahoo.
         default_cost_of_debt: Kd para estimar intereses ausentes (ver ``build_company``).
         cache_dir: Carpeta raíz de la caché.
+        type_rules: Tabla de tipos de empresa (ver ``build_company``).
+        model: Modelo forzado; ``None`` = el de la tabla (ver ``build_company``).
 
     Returns:
         Compañía con importes en EUR.
     """
     raw = fetch_yahoo(ticker)
     save_raw(raw, cache_dir)
-    return build_company(raw, default_cost_of_debt)
+    return build_company(raw, default_cost_of_debt, type_rules=type_rules, model=model)

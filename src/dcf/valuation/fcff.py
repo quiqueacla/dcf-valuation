@@ -1,4 +1,4 @@
-"""Descuento de flujos, puente a fondos propios, valor por acción y sensibilidad.
+"""Modelo FCFF: FCFF descontado al WACC, puente a fondos propios y valor por acción.
 
 Funciones puras, sin I/O. Fórmulas en ``docs/metodologia.md`` §5-§7.
 Tasas en decimal (0.08 = 8 %), importes en EUR (``float``, sin redondeo interno).
@@ -10,26 +10,31 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
 
 import dcf
-from dcf.company import BalanceSnapshot, Company
+from dcf.company import BalanceSnapshot, Company, ValuationModel, required
 from dcf.defaults import (
     SENSITIVITY_GROWTH_STEP,
     SENSITIVITY_STEPS_EACH_SIDE,
     SENSITIVITY_WACC_STEP,
 )
 from dcf.model.assumptions import Assumptions
-from dcf.model.projection import EstimateCase, project_cash_flows
-from dcf.model.ratios import HistoricalRatios, compute_historical_ratios
+from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.fcff_projection import project_cash_flows
+from dcf.model.fcff_ratios import HistoricalRatios, compute_historical_ratios
 from dcf.model.terminal_value import gordon_terminal_value
-from dcf.model.wacc import MarketInputs, compute_wacc
-from dcf.valuation.result import ProjectedYear, ValuationResult
-from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName, ScenarioResult
+from dcf.model.wacc import compute_wacc
+from dcf.valuation.discounting import (
+    discount_with_terminal_value,
+    scenario_inputs,
+    sensitivity_grid,
+    value_per_share,
+)
+from dcf.valuation.fcff_result import ProjectedYear, ValuationResult
+from dcf.valuation.scenarios import ScenarioConfig, ScenarioName, ScenarioResult
 
-GRID_DECIMALS = 10
-"""Decimales de la rejilla de sensibilidad: elimina el ruido de float al sumar pasos."""
+FCFF = ValuationModel.FCFF
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,28 +56,6 @@ class EnterpriseValue:
     enterprise_value: float
 
 
-# Factores de descuento a final de año: 1 / (1 + WACC)^k, k = 1..n.
-def discount_factors(wacc: float, years: int) -> np.ndarray:
-    """Calcula los factores de descuento a final de año.
-
-    Args:
-        wacc: WACC en decimal (> −1).
-        years: Número de años (≥ 1).
-
-    Returns:
-        Array de longitud ``years`` con 1 / (1 + WACC)^k.
-
-    Raises:
-        ValueError: Si ``years`` < 1 o WACC ≤ −1.
-    """
-    if years < 1:
-        raise ValueError(f"years debe ser ≥ 1, recibido {years}")
-    if wacc <= -1:
-        raise ValueError(f"wacc debe ser > −1, recibido {wacc}")
-    factors: np.ndarray = np.power(1.0 + wacc, -np.arange(1, years + 1, dtype=float))
-    return factors
-
-
 # VE = Σ FCFF_k / (1 + WACC)^k + VT_Gordon / (1 + WACC)^N.
 def compute_enterprise_value(
     fcffs: Sequence[float], wacc: float, terminal_growth: float, risk_free_rate: float
@@ -91,17 +74,16 @@ def compute_enterprise_value(
     Raises:
         ValueError: Si no hay flujos, si g ≥ WACC o g ≥ rf.
     """
-    flows = np.asarray(fcffs, dtype=float)
-    factors = discount_factors(wacc, len(flows))
-    present = flows * factors
-    tv = gordon_terminal_value(float(flows[-1]), wacc, terminal_growth, risk_free_rate)
-    tv_present = tv * float(factors[-1])
+    if not fcffs:
+        raise ValueError("Se necesita al menos un FCFF proyectado")
+    tv = gordon_terminal_value(float(fcffs[-1]), wacc, terminal_growth, risk_free_rate)
+    d = discount_with_terminal_value(fcffs, wacc, tv)
     return EnterpriseValue(
-        discount_factors=tuple(float(x) for x in factors),
-        present_values=tuple(float(x) for x in present),
-        terminal_value=tv,
-        terminal_value_present=tv_present,
-        enterprise_value=float(present.sum()) + tv_present,
+        discount_factors=d.discount_factors,
+        present_values=d.present_values,
+        terminal_value=d.terminal_value,
+        terminal_value_present=d.terminal_value_present,
+        enterprise_value=d.total,
     )
 
 
@@ -115,27 +97,13 @@ def equity_value(enterprise_value: float, balance: BalanceSnapshot) -> float:
 
     Returns:
         Valor de los fondos propios en EUR (puede ser negativo).
-    """
-    return enterprise_value - balance.total_debt + balance.cash - balance.minority_interest
-
-
-# Valor por acción = fondos propios / acciones diluidas.
-def value_per_share(equity: float, diluted_shares: float) -> float:
-    """Reparte el valor de los fondos propios entre las acciones diluidas.
-
-    Args:
-        equity: Valor de los fondos propios, en EUR.
-        diluted_shares: Número de acciones diluidas.
-
-    Returns:
-        Valor por acción, en EUR.
 
     Raises:
-        ValueError: Si ``diluted_shares`` ≤ 0.
+        ValueError: Si el balance no tiene deuda total o caja.
     """
-    if diluted_shares <= 0:
-        raise ValueError(f"diluted_shares debe ser positivo, recibido {diluted_shares}")
-    return equity / diluted_shares
+    debt = required(balance.total_debt, "la deuda total", FCFF)
+    cash = required(balance.cash, "la caja", FCFF)
+    return enterprise_value - debt + cash - balance.minority_interest
 
 
 # Tabla de valor por acción para WACC (filas) × g (columnas); NaN si g ≥ WACC o g ≥ rf.
@@ -162,43 +130,17 @@ def sensitivity_table(
         steps_each_side: Pasos a cada lado del valor central.
 
     Returns:
-        DataFrame con índice ``wacc`` y columnas ``terminal_growth`` (en decimal) y el
-        valor por acción en EUR. Celdas inválidas a NaN.
+        DataFrame con índice ``discount_rate`` (WACC) y columnas ``terminal_growth``
+        (en decimal) y el valor por acción en EUR. Celdas inválidas a NaN.
     """
-    offsets = np.arange(-steps_each_side, steps_each_side + 1, dtype=float)
-    # Se redondea a 10 decimales para que g y WACC iguales lo sean también en float
-    # (si no, g = WACC − 1e-18 da un valor terminal absurdo en vez de una celda vacía).
-    waccs = np.round(wacc + offsets * wacc_step, GRID_DECIMALS)
-    growths = np.round(terminal_growth + offsets * growth_step, GRID_DECIMALS)
-    values = np.full((len(waccs), len(growths)), np.nan)
-    for i, w in enumerate(waccs):
-        if w <= 0:
-            continue
-        for j, g in enumerate(growths):
-            if g >= w or g >= risk_free_rate:
-                continue
-            ev = compute_enterprise_value(fcffs, float(w), float(g), risk_free_rate)
-            equity = equity_value(ev.enterprise_value, balance)
-            values[i, j] = value_per_share(equity, balance.diluted_shares)
-    return pd.DataFrame(
-        values,
-        index=pd.Index(waccs, name="wacc"),
-        columns=pd.Index(growths, name="terminal_growth"),
+
+    def value_for(w: float, g: float) -> float:
+        ev = compute_enterprise_value(fcffs, w, g, risk_free_rate)
+        return value_per_share(equity_value(ev.enterprise_value, balance), balance.diluted_shares)
+
+    return sensitivity_grid(
+        value_for, wacc, terminal_growth, risk_free_rate, wacc_step, growth_step, steps_each_side
     )
-
-
-# Parámetros (caso de ventas, WACC, g) de un escenario según los modos activos.
-def _scenario_inputs(
-    name: ScenarioName, config: ScenarioConfig, wacc: float, growth: float
-) -> tuple[EstimateCase, float, float]:
-    sign = {ScenarioName.BEARISH: -1.0, ScenarioName.NEUTRAL: 0.0, ScenarioName.BULLISH: 1.0}[name]
-    case = EstimateCase.AVERAGE
-    if ScenarioMode.SALES in config.modes and sign != 0:
-        case = EstimateCase.HIGH if sign > 0 else EstimateCase.LOW
-    if ScenarioMode.COST in config.modes:
-        wacc -= sign * config.wacc_shift
-        growth += sign * config.growth_shift
-    return case, wacc, growth
 
 
 # Valora los escenarios bajista, neutro y alcista; un escenario inválido no detiene el resto.
@@ -226,7 +168,7 @@ def compute_scenarios(
     """
     results: list[ScenarioResult] = []
     for name in ScenarioName:
-        case, w, g = _scenario_inputs(name, config, wacc, assumptions.terminal_growth)
+        case, w, g = scenario_inputs(name, config, wacc, assumptions.terminal_growth)
         projection = project_cash_flows(company, ratios, assumptions.projection_years, case)
         try:
             if w <= 0:
@@ -242,9 +184,9 @@ def compute_scenarios(
             ScenarioResult(
                 name=name,
                 estimate_case=case,
-                wacc=w,
+                discount_rate=w,
                 terminal_growth=g,
-                enterprise_value=ev.enterprise_value,
+                total_value=ev.enterprise_value,
                 terminal_value_weight=ev.terminal_value_present / ev.enterprise_value,
                 value_per_share=value_per_share(equity, company.balance.diluted_shares),
                 warnings=projection.warnings,
@@ -253,7 +195,7 @@ def compute_scenarios(
     return tuple(results)
 
 
-# Valoración completa: ratios → proyección → WACC → VE → fondos propios → por acción.
+# Valoración FCFF completa: ratios → proyección → WACC → VE → fondos propios → por acción.
 def value_company(
     company: Company,
     market_inputs: MarketInputs,
@@ -261,7 +203,7 @@ def value_company(
     valuation_date: datetime,
     scenario_config: ScenarioConfig | None = None,
 ) -> ValuationResult:
-    """Valora la compañía por DCF (FCFF descontado al WACC).
+    """Valora la compañía con el modelo FCFF (FCFF descontado al WACC).
 
     Args:
         company: Datos de la compañía en EUR.

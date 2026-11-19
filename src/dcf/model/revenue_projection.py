@@ -1,18 +1,19 @@
-"""Proyección de ventas, Net Income y FCFF (funciones puras, sin I/O).
+"""Ventas y Net Income: ratios históricos y proyección comunes a FCFF y FCFE.
 
-Fórmulas en ``docs/metodologia.md`` §3. Tasas en decimal (0.08 = 8 %), importes en EUR.
+Funciones puras, sin I/O. Fórmulas en ``docs/metodologia.md`` §2-§3.
+Tasas en decimal (0.08 = 8 %), importes en EUR.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
 import numpy as np
 
-from dcf.company import Company, RevenueEstimate
+from dcf.company import Company, HistoricalYear, RevenueEstimate
 from dcf.defaults import ANALYST_ESTIMATE_YEARS
-from dcf.model.ratios import HistoricalRatios
 
 
 class RevenueSource(StrEnum):
@@ -24,42 +25,6 @@ class RevenueSource(StrEnum):
     """Ventas del año anterior × (1 + crecimiento medio)."""
 
 
-@dataclass(frozen=True, slots=True)
-class ProjectedFlow:
-    """Un año proyectado, antes de descontar.
-
-    Attributes:
-        fiscal_year: Ejercicio proyectado.
-        revenue: Ventas proyectadas.
-        revenue_growth: Crecimiento de ventas respecto al año anterior.
-        revenue_source: Si las ventas vienen de analistas o del crecimiento medio.
-        net_income: Beneficio neto proyectado (ventas × margen neto medio).
-        fcff: Flujo de caja libre para la empresa (Net Income × FCFF/Net Income medio).
-    """
-
-    fiscal_year: int
-    revenue: float
-    revenue_growth: float
-    revenue_source: RevenueSource
-    net_income: float
-    fcff: float
-
-
-@dataclass(frozen=True, slots=True)
-class Projection:
-    """Proyección completa del horizonte explícito.
-
-    Attributes:
-        flows: Años proyectados, en orden.
-        projection_growth: Crecimiento aplicado a los años sin estimación de analistas:
-            media de los crecimientos históricos y de los de analistas (+1, +2).
-    """
-
-    flows: tuple[ProjectedFlow, ...]
-    projection_growth: float
-    warnings: tuple[str, ...] = ()
-
-
 class EstimateCase(StrEnum):
     """Qué estimación de ventas de analistas se usa para +1 y +2."""
 
@@ -69,6 +34,70 @@ class EstimateCase(StrEnum):
     """La media del consenso (escenario neutro)."""
     HIGH = "high"
     """La más alta del consenso (escenario alcista)."""
+
+
+@dataclass(frozen=True, slots=True)
+class RevenueYear:
+    """Ventas y beneficio de un año proyectado.
+
+    Attributes:
+        fiscal_year: Ejercicio proyectado.
+        revenue: Ventas proyectadas.
+        revenue_growth: Crecimiento de ventas respecto al año anterior.
+        revenue_source: Si las ventas vienen de analistas o del crecimiento medio.
+        net_income: Beneficio neto proyectado (ventas × margen neto medio).
+    """
+
+    fiscal_year: int
+    revenue: float
+    revenue_growth: float
+    revenue_source: RevenueSource
+    net_income: float
+
+
+@dataclass(frozen=True, slots=True)
+class RevenueProjection:
+    """Proyección de ventas y Net Income del horizonte explícito.
+
+    Attributes:
+        years: Años proyectados, en orden.
+        projection_growth: Crecimiento aplicado a los años sin estimación de analistas:
+            media de los crecimientos históricos y de los de analistas (+1, +2).
+        warnings: Avisos (p. ej. falta la estimación baja o alta).
+    """
+
+    years: tuple[RevenueYear, ...]
+    projection_growth: float
+    warnings: tuple[str, ...] = ()
+
+
+# Crecimiento de ventas de cada ejercicio respecto al anterior (el primero no tiene).
+def revenue_growth_by_year(historicals: Sequence[HistoricalYear]) -> dict[int, float]:
+    """Calcula g_i = Ventas_i / Ventas_{i−1} − 1.
+
+    Args:
+        historicals: Ejercicios históricos ascendentes y consecutivos.
+
+    Returns:
+        Crecimiento en decimal por ejercicio, desde el segundo.
+    """
+    return {
+        curr.fiscal_year: curr.revenue / prev.revenue - 1.0
+        for prev, curr in zip(historicals, historicals[1:], strict=False)
+    }
+
+
+# Margen neto de cada ejercicio (Net Income / ventas), incluidos los años con pérdidas.
+def net_margin_by_year(historicals: Sequence[HistoricalYear]) -> dict[int, float]:
+    """Calcula m_i = Net Income_i / Ventas_i.
+
+    Args:
+        historicals: Ejercicios históricos.
+
+    Returns:
+        Margen neto en decimal por ejercicio.
+    """
+    return {h.fiscal_year: h.net_income / h.revenue for h in historicals}
 
 
 # Ventas estimadas según el caso; si falta low/high se usa la media y se avisa.
@@ -86,27 +115,29 @@ def _estimate_revenue(estimate: RevenueEstimate, case: EstimateCase, warnings: l
     return value
 
 
-# Proyecta ventas (analistas + crecimiento medio), Net Income y FCFF del horizonte.
-def project_cash_flows(
+# Proyecta ventas (analistas + crecimiento medio) y Net Income (ventas × margen medio).
+def project_revenue(
     company: Company,
-    ratios: HistoricalRatios,
+    historical_growth: Sequence[float],
+    average_net_margin: float,
     projection_years: int,
     estimate_case: EstimateCase = EstimateCase.AVERAGE,
-) -> Projection:
-    """Proyecta los flujos del horizonte explícito.
+) -> RevenueProjection:
+    """Proyecta ventas y Net Income del horizonte explícito.
 
     Los años +1 y +2 usan las estimaciones de analistas si existen. El resto crece a
     la media de los crecimientos históricos y de los implícitos en las estimaciones.
 
     Args:
         company: Compañía con históricos y, opcionalmente, estimaciones de ventas.
-        ratios: Ratios históricos de la compañía (ver ``compute_historical_ratios``).
+        historical_growth: Crecimientos históricos de ventas, en decimal.
+        average_net_margin: Margen neto medio histórico, en decimal.
         projection_years: Número de años a proyectar (≥ 1).
         estimate_case: Estimación de analistas a usar (baja, media o alta). Si la
             elegida no existe para un año, se usa la media.
 
     Returns:
-        Flujos proyectados, crecimiento medio aplicado y avisos.
+        Ventas y Net Income proyectados, crecimiento medio aplicado y avisos.
 
     Raises:
         ValueError: Si ``projection_years`` < 1.
@@ -123,13 +154,11 @@ def project_cash_flows(
         analyst_growth.append(revenue / previous - 1.0)
         previous = revenue
 
-    growth_rates = list(ratios.revenue_growth_by_year.values()) + analyst_growth
-    projection_growth = float(np.mean(growth_rates))
+    projection_growth = float(np.mean([*historical_growth, *analyst_growth]))
 
-    flows: list[ProjectedFlow] = []
+    years: list[RevenueYear] = []
     previous = company.historicals[-1].revenue
     for i in range(projection_years):
-        year = company.last_fiscal_year + 1 + i
         if i < len(estimates):
             revenue, growth, source = (
                 estimated[i],
@@ -139,19 +168,17 @@ def project_cash_flows(
         else:
             revenue = previous * (1.0 + projection_growth)
             growth, source = projection_growth, RevenueSource.AVERAGE_GROWTH
-        net_income = revenue * ratios.average_net_margin
-        flows.append(
-            ProjectedFlow(
-                fiscal_year=year,
+        years.append(
+            RevenueYear(
+                fiscal_year=company.last_fiscal_year + 1 + i,
                 revenue=revenue,
                 revenue_growth=growth,
                 revenue_source=source,
-                net_income=net_income,
-                fcff=net_income * ratios.average_fcff_to_net_income,
+                net_income=revenue * average_net_margin,
             )
         )
         previous = revenue
 
-    return Projection(
-        flows=tuple(flows), projection_growth=projection_growth, warnings=tuple(warnings)
+    return RevenueProjection(
+        years=tuple(years), projection_growth=projection_growth, warnings=tuple(warnings)
     )

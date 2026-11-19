@@ -68,9 +68,14 @@ Notas:
    si alguna empresa no publica sus intereses, el coste de la deuda por defecto.
 2. Fija el crecimiento terminal en `config/settings.toml` (`terminal_growth`) o pásalo con
    `--set g=2%`. En el mismo fichero se eligen los modos de escenario (`ventas`, `coste`).
+3. Opcional: revisa `config/company_types.toml`, la tabla que clasifica cada empresa como
+   industrial, banco, aseguradora o inmobiliaria según su sector e industria de Yahoo y fija su
+   modelo: **FCFF** (flujo para la empresa, descontado al WACC) para industriales y
+   **FCFE** (flujo para el accionista, descontado a Ke) para bancos y aseguradoras. Las
+   inmobiliarias se valoran con FCFF y el informe avisa de que el modelo puede no ser adecuado.
 
 Las rutas por defecto son relativas a la carpeta del proyecto: ejecuta `dcf` desde ella o
-indica los ficheros con `-c` y `-m`.
+indica los ficheros con `-c`, `-m` y `-t`.
 
 ## Uso rápido
 
@@ -81,6 +86,8 @@ dcf -c config/settings.toml -f tickers.example.txt
 dcf ITX.MC --set g=2% --set modes=ventas,coste  # ajustar supuestos sin tocar el fichero
 dcf ITX.MC --set wacc_shift=1.5% --set projection_years=7
 python -m dcf ITX.MC --no-extras                # sin escenarios (más rápido)
+dcf SAN.MC MAP.MC                               # financieras: modelo FCFE automático
+dcf SAN.MC --model fcff                         # forzar un modelo (avisa si no es adecuado)
 dcf ITX.MC --from-cache data/cache/ITX.MC/20261118T103000Z   # repetir sin red
 ```
 
