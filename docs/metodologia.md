@@ -146,6 +146,20 @@ Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita 
   correlación negativa con el mercado en 2022). Una beta 0 se acepta (Ke = rf).
 - El informe muestra la beta publicada por Yahoo y la utilizada, con fuente, fecha y modo.
 
+**Tasa de descuento forzada** (WACC en FCFF, Ke en FCFE). Precedencia:
+
+1. Argumento `--set rate=8%` (o `discount_rate=`): todos los tickers de la ejecución.
+2. `[discount_rate."TICKER"]` en `market_inputs.toml`, con `value`, `source` y `date`: solo
+   ese ticker. No hay valor general en el fichero.
+3. La calculada (§4 para el WACC, CAPM para Ke).
+
+- Con tasa forzada, la calculada se muestra solo como información y, si no se puede calcular
+  (p. ej. beta negativa o sin Kd), pasa a ser un aviso en lugar de un error.
+- El descuento, el valor terminal, la sensibilidad y los escenarios (modo `coste`, desplazados
+  desde la tasa forzada) usan la tasa forzada; se sigue validando g < tasa y g < rf.
+- La tasa forzada debe ser positiva. El informe y el resumen del lote indican que está
+  forzada, su fuente y fecha, y la tasa calculada.
+
 ## 5. Descuento y valor terminal
 
 - Descuento a final de año: FD_k = 1 / (1 + WACC)^k, con k entero = 1, 2, …, N (el +1 es el ejercicio en curso).

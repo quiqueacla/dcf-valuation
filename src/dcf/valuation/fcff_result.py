@@ -11,6 +11,8 @@ from datetime import datetime
 import pandas as pd
 
 from dcf.model.assumptions import Assumptions
+from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.discount_rate import DiscountRateChoice
 from dcf.model.fcff_ratios import HistoricalRatios
 from dcf.model.revenue_projection import RevenueSource
 from dcf.model.terminal_value import validate_terminal_growth
@@ -55,7 +57,10 @@ class ValuationResult:
         code_version: Versión del paquete ``dcf`` que produjo el resultado.
         assumptions: Supuestos completos utilizados.
         ratios: Medias históricas utilizadas en la proyección.
-        wacc: WACC con todos sus componentes (rf, PRM, beta, Ke, Kd, t, pesos).
+        wacc: WACC calculado con todos sus componentes (rf, PRM, beta, Ke, Kd, t,
+            pesos); ``None`` si no se pudo calcular y la tasa está forzada.
+        discount_rate: Tasa con la que se descuenta (WACC calculado o forzado) y su origen.
+        market_inputs: rf, PRM y configuración de la beta usados.
         projections: Años de la proyección explícita, en orden.
         projection_growth: Crecimiento de ventas aplicado a los años sin estimación de
             analistas (media de crecimientos históricos y de analistas).
@@ -76,7 +81,9 @@ class ValuationResult:
     code_version: str
     assumptions: Assumptions
     ratios: HistoricalRatios
-    wacc: WaccResult
+    wacc: WaccResult | None
+    discount_rate: DiscountRateChoice
+    market_inputs: MarketInputs
     projections: tuple[ProjectedYear, ...]
     projection_growth: float
     terminal_value: float
@@ -88,12 +95,12 @@ class ValuationResult:
     scenarios: tuple[ScenarioResult, ...] = ()
     warnings: tuple[str, ...] = ()
 
-    # Valida fechas con zona, g < WACC y g < rf, horizonte coherente y VE positivo.
+    # Valida fechas con zona, g < tasa de descuento y g < rf, horizonte coherente y VE positivo.
     def __post_init__(self) -> None:
         validate_terminal_growth(
             self.assumptions.terminal_growth,
-            self.wacc.wacc,
-            self.wacc.market_inputs.risk_free_rate.value,
+            self.discount_rate.value,
+            self.market_inputs.risk_free_rate.value,
         )
         for name in ("data_date", "valuation_date"):
             value: datetime = getattr(self, name)

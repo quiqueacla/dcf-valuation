@@ -36,7 +36,6 @@ from dcf.reports.summary import (
     summary_row,
 )
 from dcf.settings import DEFAULT_SETTINGS_PATH, AppSettings, apply_overrides, load_settings
-from dcf.valuation.fcfe_result import FcfeValuationResult
 from dcf.valuation.run import AnyValuationResult, run_valuation
 
 DEFAULT_OUTPUT_DIR = Path("output")
@@ -104,7 +103,8 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         metavar="CLAVE=VALOR",
         help="Ajusta la configuración: terminal_growth (g), projection_years, modes, "
-        "wacc_shift, growth_shift. Tasas como 2%% o 0.02. Repetible.",
+        "wacc_shift, growth_shift, rate (tasa de descuento forzada: WACC o Ke). "
+        "Tasas como 2%% o 0.02. Repetible.",
     )
     p.add_argument("--g", type=float, help="Crecimiento terminal en decimal (atajo de --set g=)")
     p.add_argument(
@@ -185,7 +185,12 @@ def _value_one(
     )
     assumptions = Assumptions(terminal_growth=growth, projection_years=settings.projection_years)
     scenarios = None if args.no_extras else settings.scenarios
-    result = run_valuation(company, market, assumptions, moment, scenarios)
+    argument_rate = (
+        None
+        if settings.discount_rate is None
+        else MarketRate(settings.discount_rate, "argumento --set rate", moment)
+    )
+    result = run_valuation(company, market, assumptions, moment, scenarios, argument_rate)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     path = args.output_dir / f"{ticker}_{moment:%Y%m%dT%H%M%SZ}.md"
     path.write_text(render_report(company, result), encoding="utf-8")
@@ -195,11 +200,8 @@ def _value_one(
 # Línea de resumen de un ticker valorado (para ejecuciones con varios tickers).
 def _summary(company: Company, result: AnyValuationResult, path: Path) -> str:
     price = company.balance.share_price
-    rate = (
-        f"Ke {result.cost_of_equity.cost_of_equity:.2%}"
-        if isinstance(result, FcfeValuationResult)
-        else f"WACC {result.wacc.wacc:.2%}"
-    )
+    choice = result.discount_rate
+    rate = f"{choice.name} {choice.value:.2%}" + (" forzado" if choice.is_forced else "")
     model = company.info.valuation_model.value
     parts = [
         f"{result.ticker}: {result.value_per_share:,.2f} € por acción "

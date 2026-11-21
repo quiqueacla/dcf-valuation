@@ -7,6 +7,7 @@ import pytest
 from dcf.company import Company
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.discount_rate import choose_discount_rate
 from dcf.model.fcff_ratios import HistoricalRatios
 from dcf.model.revenue_projection import RevenueSource
 from dcf.model.wacc import compute_wacc
@@ -34,6 +35,8 @@ def base(company: Company, market_inputs: MarketInputs) -> dict[str, object]:
         "assumptions": Assumptions(terminal_growth=0.02, projection_years=2),
         "ratios": HistoricalRatios({}, {}, {}, {}, {}, 0.10, 0.10, 0.9, ()),
         "wacc": compute_wacc(company, market_inputs),  # WACC 8,125 %, rf 3 %
+        "discount_rate": choose_discount_rate("WACC", 0.08125, None, None),
+        "market_inputs": market_inputs,
         "projections": projections,
         "projection_growth": 0.10,
         "terminal_value": 1402.5,

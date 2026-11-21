@@ -6,7 +6,7 @@ from datetime import datetime
 
 from dcf.company import Company, ValuationModel
 from dcf.model.assumptions import Assumptions
-from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.cost_of_equity import MarketInputs, MarketRate
 from dcf.valuation import fcfe, fcff
 from dcf.valuation.fcfe_result import FcfeValuationResult
 from dcf.valuation.fcff_result import ValuationResult
@@ -23,15 +23,20 @@ def run_valuation(
     assumptions: Assumptions,
     valuation_date: datetime,
     scenario_config: ScenarioConfig | None = None,
+    argument_rate: MarketRate | None = None,
 ) -> AnyValuationResult:
     """Valora la compañía con su modelo: FCFF (empresas industriales) o FCFE (financieras).
 
+    Tasa de descuento (WACC o Ke), por precedencia: ``argument_rate`` (``--set rate``) >
+    ``[discount_rate."TICKER"]`` de ``market_inputs.toml`` > calculada.
+
     Args:
         company: Datos de la compañía en EUR.
-        market_inputs: rf, PRM, Kd por defecto y configuración de la beta.
+        market_inputs: rf, PRM, Kd por defecto, beta y tasas forzadas por ticker.
         assumptions: g terminal y horizonte.
         valuation_date: Momento de la valoración, en UTC.
         scenario_config: Modos de escenario; ``None`` = sin escenarios.
+        argument_rate: Tasa forzada por argumento para todos los tickers; ``None`` si no.
 
     Returns:
         Resultado del modelo aplicado.
@@ -39,8 +44,11 @@ def run_valuation(
     Raises:
         ValueError: Si algún dato o supuesto es inválido para el modelo.
     """
+    override = argument_rate or market_inputs.discount_rate_for(company.info.ticker)
     if company.info.valuation_model is ValuationModel.FCFE:
         return fcfe.value_company(
-            company, market_inputs, assumptions, valuation_date, scenario_config
+            company, market_inputs, assumptions, valuation_date, scenario_config, override
         )
-    return fcff.value_company(company, market_inputs, assumptions, valuation_date, scenario_config)
+    return fcff.value_company(
+        company, market_inputs, assumptions, valuation_date, scenario_config, override
+    )

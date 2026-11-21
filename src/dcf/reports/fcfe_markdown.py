@@ -13,6 +13,7 @@ from dcf.reports.format import (
     amount,
     company_section,
     cost_of_equity_rows,
+    discount_rate_note,
     eur,
     num,
     pct,
@@ -29,10 +30,16 @@ from dcf.valuation.fcfe_result import FcfeValuationResult
 # Sección 2: Ke por CAPM (tasa de descuento del FCFE).
 def _cost_section(result: FcfeValuationResult) -> str:
     ke = result.cost_of_equity
-    return (
+    text = (
         "## 2. Coste de los fondos propios (Ke)\n\n"
         "En el modelo FCFE los flujos son del accionista y se descuentan a Ke; no hay WACC "
-        "ni coste de la deuda.\n\n"
+        "ni coste de la deuda.\n" + discount_rate_note(result.discount_rate)
+    )
+    if ke is None:
+        return text
+    return (
+        text
+        + "\n"
         + table(["Componente", "Valor", "Fuente"], cost_of_equity_rows(ke))
         + "\n"
         + warnings_block("Avisos del coste de los fondos propios", ke.warnings)

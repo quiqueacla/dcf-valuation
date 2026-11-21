@@ -11,7 +11,8 @@ from datetime import datetime
 import pandas as pd
 
 from dcf.model.assumptions import Assumptions
-from dcf.model.cost_of_equity import CostOfEquityResult
+from dcf.model.cost_of_equity import CostOfEquityResult, MarketInputs
+from dcf.model.discount_rate import DiscountRateChoice
 from dcf.model.fcfe_projection import FcfeFlow, FcfeRatios
 from dcf.model.terminal_value import validate_terminal_growth
 from dcf.valuation.scenarios import ScenarioResult
@@ -44,7 +45,10 @@ class FcfeValuationResult:
         code_version: Versión del paquete ``dcf`` que produjo el resultado.
         assumptions: Supuestos completos utilizados.
         ratios: Ratios históricos (crecimiento, margen, fondos propios, ROE).
-        cost_of_equity: Ke con rf, PRM y beta: tasa de descuento del FCFE.
+        cost_of_equity: Ke calculado con rf, PRM y beta; ``None`` si no se pudo calcular
+            y la tasa está forzada.
+        discount_rate: Tasa con la que se descuenta (Ke calculado o forzado) y su origen.
+        market_inputs: rf, PRM y configuración de la beta usados.
         projections: Años de la proyección explícita, en orden.
         projection_growth: Crecimiento de ventas aplicado a los años sin estimación de
             analistas (media de crecimientos históricos y de analistas).
@@ -66,7 +70,9 @@ class FcfeValuationResult:
     code_version: str
     assumptions: Assumptions
     ratios: FcfeRatios
-    cost_of_equity: CostOfEquityResult
+    cost_of_equity: CostOfEquityResult | None
+    discount_rate: DiscountRateChoice
+    market_inputs: MarketInputs
     projections: tuple[FcfeProjectedYear, ...]
     projection_growth: float
     terminal_fcfe: float
@@ -82,8 +88,8 @@ class FcfeValuationResult:
     def __post_init__(self) -> None:
         validate_terminal_growth(
             self.assumptions.terminal_growth,
-            self.cost_of_equity.cost_of_equity,
-            self.cost_of_equity.market_inputs.risk_free_rate.value,
+            self.discount_rate.value,
+            self.market_inputs.risk_free_rate.value,
             "Ke",
         )
         for name in ("data_date", "valuation_date"):

@@ -114,18 +114,29 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
     if suitability is not None:
         warnings.insert(0, suitability)
 
+    choice = result.discount_rate
+    sources: str | None = None
     if isinstance(result, FcfeValuationResult):
-        rate_name, rate = "Ke", result.cost_of_equity.cost_of_equity
-        sources = _rate_sources(result.cost_of_equity, None)
+        if result.cost_of_equity is not None:
+            sources = _rate_sources(result.cost_of_equity, None)
     else:
         w = result.wacc
-        rate_name, rate = "WACC", w.wacc
-        equity = CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
-        kd = "sin deuda" if w.cost_of_debt is None else pct(w.cost_of_debt)
-        sources = _rate_sources(
-            equity, f"Kd {kd} y t {pct(w.tax_rate)} (medias históricas, {result.source})"
+        if w is not None:
+            equity = CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
+            kd = "sin deuda" if w.cost_of_debt is None else pct(w.cost_of_debt)
+            sources = _rate_sources(
+                equity, f"Kd {kd} y t {pct(w.tax_rate)} (medias históricas, {result.source})"
+            )
+            warnings += list(w.warnings)
+        warnings += list(result.ratios.warnings)
+    if choice.override is not None:
+        forced = f"forzado ({choice.override.source}, {choice.override.date:%Y-%m-%d})"
+        calculated = (
+            f"calculado: no se pudo calcular ({choice.calculation_error})"
+            if choice.calculated is None
+            else f"calculado {pct(choice.calculated)}: {sources}"
         )
-        warnings += [*w.warnings, *result.ratios.warnings]
+        sources = f"{forced}; {calculated}"
     warnings += list(result.warnings)
 
     by_name = {s.name: s for s in result.scenarios}
@@ -146,8 +157,8 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
         bearish=scenario(ScenarioName.BEARISH),
         neutral=result.value_per_share,
         bullish=scenario(ScenarioName.BULLISH),
-        rate_name=rate_name,
-        discount_rate=rate,
+        rate_name=choice.name,
+        discount_rate=choice.value,
         terminal_growth=result.assumptions.terminal_growth,
         rate_sources=sources,
         growth_source=growth_source,

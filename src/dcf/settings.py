@@ -23,6 +23,8 @@ OVERRIDE_KEYS = {
     "modes": "modes",
     "wacc_shift": "wacc_shift",
     "growth_shift": "growth_shift",
+    "rate": "discount_rate",
+    "discount_rate": "discount_rate",
 }
 
 
@@ -35,11 +37,15 @@ class AppSettings:
             debe darse por línea de comandos).
         scenarios: Modos de escenario y desplazamientos.
         projection_years: Años de proyección explícita.
+        discount_rate: Tasa de descuento forzada para todos los tickers de la ejecución
+            (WACC en FCFF, Ke en FCFE), en decimal; ``None`` = la del fichero o la
+            calculada. Solo se fija con ``--set rate=``.
     """
 
     terminal_growth: float | None
     scenarios: ScenarioConfig
     projection_years: int = DEFAULT_PROJECTION_YEARS
+    discount_rate: float | None = None
 
 
 # Número de una sección TOML; error claro si falta o no es numérico.
@@ -135,8 +141,9 @@ def apply_overrides(settings: AppSettings, pairs: Sequence[str]) -> AppSettings:
     """Sobrescribe valores de la configuración desde la línea de comandos.
 
     Claves: ``terminal_growth`` (o ``g``), ``projection_years``, ``modes``
-    (lista separada por comas; vacío = solo neutro), ``wacc_shift``, ``growth_shift``.
-    Las tasas admiten ``2%`` o ``0.02``.
+    (lista separada por comas; vacío = solo neutro), ``wacc_shift``, ``growth_shift`` y
+    ``rate`` (o ``discount_rate``: tasa de descuento forzada, > 0). Las tasas admiten
+    ``2%`` o ``0.02``.
 
     Args:
         settings: Configuración de partida.
@@ -172,6 +179,11 @@ def apply_overrides(settings: AppSettings, pairs: Sequence[str]) -> AppSettings:
         elif target == "wacc_shift":
             scenarios = dataclasses.replace(result.scenarios, wacc_shift=parse_rate(value))
             result = dataclasses.replace(result, scenarios=scenarios)
+        elif target == "discount_rate":
+            rate = parse_rate(value)
+            if rate <= 0:
+                raise ValueError(f"--set '{pair}': la tasa de descuento debe ser positiva")
+            result = dataclasses.replace(result, discount_rate=rate)
         else:
             scenarios = dataclasses.replace(result.scenarios, growth_shift=parse_rate(value))
             result = dataclasses.replace(result, scenarios=scenarios)

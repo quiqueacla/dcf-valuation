@@ -11,7 +11,13 @@ from datetime import datetime
 import dcf
 from dcf.company import Company
 from dcf.model.assumptions import Assumptions
-from dcf.model.cost_of_equity import MarketInputs, compute_cost_of_equity
+from dcf.model.cost_of_equity import (
+    CostOfEquityResult,
+    MarketInputs,
+    MarketRate,
+    compute_cost_of_equity,
+)
+from dcf.model.discount_rate import choose_discount_rate, rate_warnings
 from dcf.model.fcfe_projection import (
     FcfeProjection,
     FcfeRatios,
@@ -119,6 +125,7 @@ def value_company(
     assumptions: Assumptions,
     valuation_date: datetime,
     scenario_config: ScenarioConfig | None = None,
+    rate_override: MarketRate | None = None,
 ) -> FcfeValuationResult:
     """Valora la compañía con el modelo FCFE (FCFE descontado a Ke).
 
@@ -128,6 +135,9 @@ def value_company(
         assumptions: g terminal y horizonte.
         valuation_date: Momento de la valoración, en UTC.
         scenario_config: Modos de escenario; ``None`` = sin escenarios.
+        rate_override: Ke forzado (argumento o fichero), con fuente y fecha. Si se
+            indica, el Ke calculado solo es informativo y, si no se puede calcular
+            (p. ej. beta negativa), queda como aviso en lugar de error.
 
     Returns:
         Resultado completo y trazable.
@@ -137,8 +147,17 @@ def value_company(
     """
     ratios = compute_fcfe_ratios(company)
     projection = project_fcfe(company, ratios, assumptions.projection_years)
-    equity_cost = compute_cost_of_equity(company, market_inputs)
-    ke, rf = equity_cost.cost_of_equity, market_inputs.risk_free_rate.value
+    equity_cost: CostOfEquityResult | None
+    try:
+        equity_cost, error = compute_cost_of_equity(company, market_inputs), None
+    except ValueError as exc:
+        if rate_override is None:
+            raise
+        equity_cost, error = None, str(exc)
+    rate = choose_discount_rate(
+        "Ke", None if equity_cost is None else equity_cost.cost_of_equity, error, rate_override
+    )
+    ke, rf = rate.value, market_inputs.risk_free_rate.value
     g = assumptions.terminal_growth
     next_fcfe, d = discount_fcfe(projection, ke, g, rf)
     shares = company.balance.diluted_shares
@@ -161,6 +180,8 @@ def value_company(
         assumptions=assumptions,
         ratios=ratios,
         cost_of_equity=equity_cost,
+        discount_rate=rate,
+        market_inputs=market_inputs,
         projections=projections,
         projection_growth=projection.projection_growth,
         terminal_fcfe=next_fcfe,
@@ -174,5 +195,9 @@ def value_company(
             if scenario_config is not None
             else ()
         ),
-        warnings=equity_cost.warnings + projection.warnings,
+        warnings=(
+            rate_warnings(rate)
+            + (() if equity_cost is None else equity_cost.warnings)
+            + projection.warnings
+        ),
     )

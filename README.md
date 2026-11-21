@@ -92,7 +92,12 @@ dcf ITX.MC --from-cache data/cache/ITX.MC/20261118T103000Z   # repetir sin red
 ```
 
 Claves de `--set`: `terminal_growth` (o `g`), `projection_years`, `modes`, `wacc_shift`,
-`growth_shift`. Las tasas admiten `2%` o `0.02`.
+`growth_shift` y `rate` (o `discount_rate`). Las tasas admiten `2%` o `0.02`.
+
+`--set rate=8%` fuerza la tasa de descuento (WACC en FCFF, Ke en FCFE) de todos los tickers de
+la ejecución. Para forzarla en un solo ticker, usa `[discount_rate."TICKER"]` en
+`market_inputs.toml`. Precedencia: argumento > fichero > calculada. El informe muestra la tasa
+calculada a título informativo y, si no se puede calcular, lo indica como aviso.
 
 Con un ticker se muestra el informe completo en consola, formateado con
 [rich](https://github.com/Textualize/rich) (títulos, tablas con bordes, negritas); con varios,

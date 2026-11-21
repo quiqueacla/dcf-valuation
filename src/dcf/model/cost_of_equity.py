@@ -111,6 +111,9 @@ class MarketInputs:
         beta: Configuración general de la beta (sección ``[beta]``).
         beta_by_ticker: Configuración por ticker (``[beta."REP.MC"]``), que prevalece
             sobre la general en cada campo que indique. Claves en mayúsculas.
+        discount_rate_by_ticker: Tasa de descuento forzada por ticker
+            (``[discount_rate."REP.MC"]``): sustituye al WACC (FCFF) o a Ke (FCFE)
+            calculados. Claves en mayúsculas.
     """
 
     risk_free_rate: MarketRate
@@ -118,6 +121,19 @@ class MarketInputs:
     default_cost_of_debt: MarketRate | None = None
     beta: BetaSettings = BetaSettings()
     beta_by_ticker: Mapping[str, BetaSettings] = field(default_factory=dict)
+    discount_rate_by_ticker: Mapping[str, MarketRate] = field(default_factory=dict)
+
+    # Tasa de descuento forzada en el fichero para un ticker; None si no hay.
+    def discount_rate_for(self, ticker: str) -> MarketRate | None:
+        """Devuelve la tasa de descuento forzada para un ticker en el fichero.
+
+        Args:
+            ticker: Ticker de la compañía (no distingue mayúsculas).
+
+        Returns:
+            Tasa con fuente y fecha, o ``None`` si se usa la calculada.
+        """
+        return self.discount_rate_by_ticker.get(ticker.upper())
 
     # Configuración de beta efectiva de un ticker: la suya y, en lo que falte, la general.
     def beta_settings_for(self, ticker: str) -> BetaSettings:

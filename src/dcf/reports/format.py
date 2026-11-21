@@ -18,6 +18,7 @@ import pandas as pd
 from dcf.company import Company, model_suitability_warning
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import CostOfEquityResult
+from dcf.model.discount_rate import DiscountRateChoice
 from dcf.valuation.scenarios import ScenarioResult
 
 MILLIONS = 1e6
@@ -243,6 +244,30 @@ def cost_of_equity_rows(equity: CostOfEquityResult) -> list[list[str]]:
         ["Beta (β)", num(beta.value, 3), beta_origin],
         ["**Coste del capital Ke = rf + β · PRM**", f"**{pct(equity.cost_of_equity)}**", "CAPM"],
     ]
+
+
+# Nota de la tasa forzada: valor usado, fuente y tasa calculada (cadena vacía si no está forzada).
+def discount_rate_note(choice: DiscountRateChoice) -> str:
+    """Construye la nota que explica que la tasa de descuento está forzada.
+
+    Args:
+        choice: Tasa elegida.
+
+    Returns:
+        Bloque Markdown, o cadena vacía si se usa la tasa calculada.
+    """
+    if choice.override is None:
+        return ""
+    calc = (
+        f"no se pudo calcular ({choice.calculation_error})"
+        if choice.calculated is None
+        else f"{pct(choice.calculated)}, solo informativo"
+    )
+    return (
+        f"\n> **Tasa de descuento forzada: {choice.name} = {pct(choice.value)}** "
+        f"({choice.override.source}, {choice.override.date:%Y-%m-%d}). "
+        f"{choice.name} calculado: {calc}.\n"
+    )
 
 
 # Tabla de escenarios (o cadena vacía si no hay) con sus avisos.

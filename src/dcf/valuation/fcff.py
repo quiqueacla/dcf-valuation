@@ -20,11 +20,12 @@ from dcf.defaults import (
     SENSITIVITY_WACC_STEP,
 )
 from dcf.model.assumptions import Assumptions
-from dcf.model.cost_of_equity import MarketInputs
+from dcf.model.cost_of_equity import MarketInputs, MarketRate
+from dcf.model.discount_rate import choose_discount_rate, rate_warnings
 from dcf.model.fcff_projection import project_cash_flows
 from dcf.model.fcff_ratios import HistoricalRatios, compute_historical_ratios
 from dcf.model.terminal_value import gordon_terminal_value
-from dcf.model.wacc import compute_wacc
+from dcf.model.wacc import WaccResult, compute_wacc
 from dcf.valuation.discounting import (
     discount_with_terminal_value,
     scenario_inputs,
@@ -202,6 +203,7 @@ def value_company(
     assumptions: Assumptions,
     valuation_date: datetime,
     scenario_config: ScenarioConfig | None = None,
+    rate_override: MarketRate | None = None,
 ) -> ValuationResult:
     """Valora la compañía con el modelo FCFF (FCFF descontado al WACC).
 
@@ -212,6 +214,9 @@ def value_company(
         valuation_date: Momento de la valoración, en UTC (se pasa explícito para que
             la función sea pura y reproducible).
         scenario_config: Modos de escenario; ``None`` = sin escenarios.
+        rate_override: WACC forzado (argumento o fichero), con fuente y fecha. Si se
+            indica, el WACC calculado solo es informativo y, si no se puede calcular,
+            queda como aviso en lugar de error.
 
     Returns:
         Resultado completo y trazable.
@@ -221,10 +226,17 @@ def value_company(
     """
     ratios = compute_historical_ratios(company)
     projection = project_cash_flows(company, ratios, assumptions.projection_years)
-    wacc = compute_wacc(company, market_inputs)
+    wacc: WaccResult | None
+    try:
+        wacc, error = compute_wacc(company, market_inputs), None
+    except ValueError as exc:
+        if rate_override is None:
+            raise
+        wacc, error = None, str(exc)
+    rate = choose_discount_rate("WACC", None if wacc is None else wacc.wacc, error, rate_override)
     rf = market_inputs.risk_free_rate.value
     fcffs = [f.fcff for f in projection.flows]
-    ev = compute_enterprise_value(fcffs, wacc.wacc, assumptions.terminal_growth, rf)
+    ev = compute_enterprise_value(fcffs, rate.value, assumptions.terminal_growth, rf)
     equity = equity_value(ev.enterprise_value, company.balance)
 
     projections = tuple(
@@ -252,6 +264,8 @@ def value_company(
         assumptions=assumptions,
         ratios=ratios,
         wacc=wacc,
+        discount_rate=rate,
+        market_inputs=market_inputs,
         projections=projections,
         projection_growth=projection.projection_growth,
         terminal_value=ev.terminal_value,
@@ -260,12 +274,12 @@ def value_company(
         equity_value=equity,
         value_per_share=value_per_share(equity, company.balance.diluted_shares),
         sensitivity=sensitivity_table(
-            fcffs, company.balance, wacc.wacc, assumptions.terminal_growth, rf
+            fcffs, company.balance, rate.value, assumptions.terminal_growth, rf
         ),
         scenarios=(
-            compute_scenarios(company, ratios, wacc.wacc, rf, assumptions, scenario_config)
+            compute_scenarios(company, ratios, rate.value, rf, assumptions, scenario_config)
             if scenario_config is not None
             else ()
         ),
-        warnings=projection.warnings,
+        warnings=rate_warnings(rate) + projection.warnings,
     )

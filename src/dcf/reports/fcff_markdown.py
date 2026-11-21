@@ -14,6 +14,7 @@ from dcf.reports.format import (
     amount,
     company_section,
     cost_of_equity_rows,
+    discount_rate_note,
     eur,
     num,
     pct,
@@ -29,7 +30,11 @@ from dcf.valuation.fcff_result import ValuationResult
 
 # Sección 2: Ke por CAPM, Kd y t por año, pesos y WACC.
 def _wacc_section(company: Company, result: ValuationResult, scale: float, unit: str) -> str:
+    title = "## 2. Coste de la deuda y del capital (WACC)\n"
+    note = discount_rate_note(result.discount_rate)
     w = result.wacc
+    if w is None:
+        return title + note
     ke = CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
     kd_rows = [
         [
@@ -68,8 +73,9 @@ def _wacc_section(company: Company, result: ValuationResult, scale: float, unit:
         "t efectivo",
     ]
     return (
-        "## 2. Coste de la deuda y del capital (WACC)\n\n"
-        "### 2.1 Coste del capital (Ke)\n\n"
+        title
+        + note
+        + "\n### 2.1 Coste del capital (Ke)\n\n"
         + table(["Componente", "Valor", "Fuente"], cost_of_equity_rows(ke))
         + "\n\n### 2.2 Coste de la deuda (Kd) y tipo impositivo (t)\n\n"
         + table(kd_headers, kd_rows)
