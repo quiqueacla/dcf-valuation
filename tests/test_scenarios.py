@@ -12,10 +12,11 @@ import pytest
 from dcf.company import Company, RevenueEstimate
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
-from dcf.model.fcff_projection import project_cash_flows
-from dcf.model.fcff_ratios import compute_historical_ratios
+from dcf.model.fcff_cfo_projection import project_cash_flows
+from dcf.model.fcff_cfo_ratios import compute_historical_ratios
 from dcf.model.revenue_projection import EstimateCase
-from dcf.valuation.fcff import compute_enterprise_value, equity_value, value_company
+from dcf.valuation.enterprise import compute_enterprise_value, equity_value
+from dcf.valuation.fcff_cfo import value_company
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName
 
 REL = 1e-9

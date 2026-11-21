@@ -113,9 +113,9 @@ def test_build_company_banco(rules: CompanyTypeRules) -> None:
 def test_tabla_del_repo_asigna_modelos(rules: CompanyTypeRules) -> None:
     assert rules.model_for(CompanyType.BANK) is ValuationModel.FCFE
     assert rules.model_for(CompanyType.INSURANCE) is ValuationModel.FCFE
-    assert rules.model_for(CompanyType.REAL_ESTATE) is ValuationModel.FCFF
-    assert rules.model_for(CompanyType.INDUSTRIAL) is ValuationModel.FCFF
-    assert rules.model_for(None) is ValuationModel.FCFF
+    assert rules.model_for(CompanyType.REAL_ESTATE) is ValuationModel.FCFF_CFO
+    assert rules.model_for(CompanyType.INDUSTRIAL) is ValuationModel.FCFF_CFO
+    assert rules.model_for(None) is ValuationModel.FCFF_CFO
 
 
 def test_modelo_forzado_prevalece_sobre_la_tabla(rules: CompanyTypeRules) -> None:
@@ -147,7 +147,7 @@ def test_build_company_sin_tabla_no_clasifica() -> None:
 @pytest.mark.parametrize(
     ("kind", "model"),
     [
-        (CompanyType.INDUSTRIAL, ValuationModel.FCFF),
+        (CompanyType.INDUSTRIAL, ValuationModel.FCFF_CFO),
         (CompanyType.BANK, ValuationModel.FCFE),
         (CompanyType.INSURANCE, ValuationModel.FCFE),
     ],
@@ -159,10 +159,10 @@ def test_sin_aviso_si_el_modelo_es_adecuado(kind: CompanyType, model: ValuationM
 @pytest.mark.parametrize(
     ("kind", "model", "text"),
     [
-        (CompanyType.BANK, ValuationModel.FCFF, "usa el modelo fcfe"),
-        (CompanyType.INSURANCE, ValuationModel.FCFF, "usa el modelo fcfe"),
+        (CompanyType.BANK, ValuationModel.FCFF_CFO, "usa el modelo fcfe"),
+        (CompanyType.INSURANCE, ValuationModel.FCFF_CFO, "usa el modelo fcfe"),
         (CompanyType.INDUSTRIAL, ValuationModel.FCFE, "FCFF recoge"),
-        (CompanyType.REAL_ESTATE, ValuationModel.FCFF, "NAV"),
+        (CompanyType.REAL_ESTATE, ValuationModel.FCFF_CFO, "NAV"),
         (CompanyType.REAL_ESTATE, ValuationModel.FCFE, "NAV"),
     ],
 )
@@ -175,7 +175,7 @@ def test_aviso_si_el_modelo_no_es_adecuado(
 
 
 def test_aviso_sin_clasificar() -> None:
-    warning = model_suitability_warning(None, ValuationModel.FCFF)
+    warning = model_suitability_warning(None, ValuationModel.FCFF_CFO)
     assert warning is not None and "sin clasificar" in warning
 
 
@@ -210,7 +210,7 @@ def test_error_de_carga_indica_si_el_modelo_no_es_adecuado(rules: CompanyTypeRul
         build_company(
             dataclasses.replace(raw, income_stmt=income),
             type_rules=rules,
-            model=ValuationModel.FCFF,
+            model=ValuationModel.FCFF_CFO,
         )
 
 

@@ -12,7 +12,7 @@ import numpy as np
 
 from dcf.company import Company, ValuationModel, required
 from dcf.model.cost_of_equity import BetaChoice, MarketInputs, compute_cost_of_equity
-from dcf.model.fcff_ratios import effective_tax_rate
+from dcf.model.tax import tax_rates
 
 WEIGHT_TOLERANCE = 1e-9
 """Tolerancia para comprobar que los pesos suman 1 (error de redondeo en float)."""
@@ -30,7 +30,7 @@ class WaccResult:
         cost_of_debt_by_year: Kd de cada ejercicio con deuda (intereses / deuda total).
         cost_of_debt: Kd medio, antes de impuestos. ``None`` si la empresa no tiene deuda.
         tax_rate_by_year: Tipo efectivo de cada ejercicio válido.
-        tax_rate: Tipo efectivo medio, para el ahorro fiscal de la deuda.
+        tax_rate: Mediana de los tipos efectivos, para el ahorro fiscal de la deuda.
         equity_value: Valor de mercado de los fondos propios (E).
         debt_value: Deuda financiera total contable (D).
         equity_weight: E / (D + E).
@@ -94,7 +94,7 @@ def weighted_average_cost_of_capital(
     return wacc
 
 
-# Calcula el WACC de la compañía: Ke por CAPM, Kd y t medios, pesos E mercado / D contable.
+# Calcula el WACC de la compañía: Ke por CAPM, Kd medio y t mediano, pesos E mercado / D contable.
 def compute_wacc(company: Company, market_inputs: MarketInputs) -> WaccResult:
     """Calcula el WACC de la compañía y sus componentes.
 
@@ -113,16 +113,9 @@ def compute_wacc(company: Company, market_inputs: MarketInputs) -> WaccResult:
     """
     warnings: list[str] = []
 
-    tax_rates: dict[int, float] = {}
-    for d in company.debt_cost_data:
-        rate, reason = effective_tax_rate(d)
-        if rate is None:
-            warnings.append(f"{d.fiscal_year} excluido del t medio: {reason}")
-        else:
-            tax_rates[d.fiscal_year] = rate
-    if not tax_rates:
-        raise ValueError("Ningún ejercicio tiene un tipo efectivo válido: " + "; ".join(warnings))
-    tax_rate = float(np.mean(list(tax_rates.values())))
+    taxes = tax_rates(company.debt_cost_data, "el t del WACC")
+    warnings.extend(taxes.warnings)
+    tax_rate = taxes.median
 
     kd_by_year: dict[int, float] = {}
     for d in company.debt_cost_data:
@@ -133,7 +126,7 @@ def compute_wacc(company: Company, market_inputs: MarketInputs) -> WaccResult:
 
     balance = company.balance
     equity_value = balance.share_price * balance.diluted_shares
-    debt_value = required(balance.total_debt, "la deuda total", ValuationModel.FCFF)
+    debt_value = required(balance.total_debt, "la deuda total", ValuationModel.FCFF_CFO)
     if debt_value > 0 and not kd_by_year:
         raise ValueError("La empresa tiene deuda pero ningún ejercicio permite calcular Kd")
     kd = float(np.mean(list(kd_by_year.values()))) if kd_by_year else None
@@ -154,7 +147,7 @@ def compute_wacc(company: Company, market_inputs: MarketInputs) -> WaccResult:
         cost_of_equity=ke,
         cost_of_debt_by_year=kd_by_year,
         cost_of_debt=kd,
-        tax_rate_by_year=tax_rates,
+        tax_rate_by_year=taxes.by_year,
         tax_rate=tax_rate,
         equity_value=equity_value,
         debt_value=debt_value,

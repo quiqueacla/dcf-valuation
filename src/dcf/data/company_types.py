@@ -26,7 +26,7 @@ class CompanyTypeRules:
         by_sector: Clave de sector (``sectorKey`` de Yahoo) → tipo de empresa. Solo se
             usa si la industria no está en ``by_industry``.
         models: Modelo de valoración de cada tipo (clave ``model`` de su sección). Los
-            tipos que no aparecen usan ``DEFAULT_VALUATION_MODEL`` (fcff).
+            tipos que no aparecen usan ``DEFAULT_VALUATION_MODEL`` (fcff_cfo).
     """
 
     by_industry: Mapping[str, CompanyType] = field(default_factory=dict)
@@ -86,7 +86,7 @@ def load_company_type_rules(path: Path = DEFAULT_COMPANY_TYPES_PATH) -> CompanyT
     Args:
         path: Fichero TOML con una sección por tipo (``[banco]``, ``[aseguradora]``,
             ``[inmobiliaria]``), listas ``industries`` y ``sectors`` y, opcional, el
-            modelo de valoración ``model`` (``fcff`` o ``fcfe``).
+            modelo de valoración ``model`` (``fcff_cfo`` o ``fcfe``).
 
     Returns:
         Reglas de clasificación.

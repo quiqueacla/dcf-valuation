@@ -19,12 +19,8 @@ from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.terminal_value import gordon_terminal_value
 from dcf.valuation.discounting import discount_factors, value_per_share
-from dcf.valuation.fcff import (
-    compute_enterprise_value,
-    equity_value,
-    sensitivity_table,
-    value_company,
-)
+from dcf.valuation.enterprise import compute_enterprise_value, equity_value, sensitivity_table
+from dcf.valuation.fcff_cfo import value_company
 
 REL = 1e-9
 NOW = datetime(2026, 11, 18, 12, tzinfo=UTC)

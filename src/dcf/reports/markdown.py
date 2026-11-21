@@ -1,4 +1,4 @@
-"""Informe de valoración en Markdown: elige el informe del modelo (FCFF o FCFE).
+"""Informe de valoración en Markdown: elige el informe del modelo (fcff_cfo o fcfe).
 
 Función pura: devuelve texto, no escribe. Formato en :mod:`dcf.reports.format`.
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dcf.company import Company
 from dcf.reports.fcfe_markdown import render_fcfe_report
-from dcf.reports.fcff_markdown import render_fcff_report
+from dcf.reports.fcff_cfo_markdown import render_fcff_cfo_report
 from dcf.reports.format import MILLIONS
 from dcf.valuation.fcfe_result import FcfeValuationResult
 from dcf.valuation.run import AnyValuationResult
@@ -33,4 +33,4 @@ def render_report(
     """
     if isinstance(result, FcfeValuationResult):
         return render_fcfe_report(company, result, scale, unit)
-    return render_fcff_report(company, result, scale, unit)
+    return render_fcff_cfo_report(company, result, scale, unit)

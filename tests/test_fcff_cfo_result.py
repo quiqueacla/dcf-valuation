@@ -8,10 +8,10 @@ from dcf.company import Company
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.discount_rate import choose_discount_rate
-from dcf.model.fcff_ratios import HistoricalRatios
+from dcf.model.fcff_cfo_ratios import HistoricalRatios
 from dcf.model.revenue_projection import RevenueSource
 from dcf.model.wacc import compute_wacc
-from dcf.valuation.fcff_result import ProjectedYear, ValuationResult
+from dcf.valuation.fcff_cfo_result import FcffCfoProjectedYear, FcffCfoValuationResult
 
 NOW = datetime(2026, 11, 18, tzinfo=UTC)
 
@@ -19,10 +19,10 @@ NOW = datetime(2026, 11, 18, tzinfo=UTC)
 @pytest.fixture
 def base(company: Company, market_inputs: MarketInputs) -> dict[str, object]:
     projections = (
-        ProjectedYear(
+        FcffCfoProjectedYear(
             2026, 1100.0, 0.10, RevenueSource.ANALYST_ESTIMATE, 110.0, 100.0, 1 / 1.1, 100 / 1.1
         ),
-        ProjectedYear(
+        FcffCfoProjectedYear(
             2027, 1210.0, 0.10, RevenueSource.AVERAGE_GROWTH, 121.0, 110.0, 1 / 1.21, 110 / 1.21
         ),
     )
@@ -48,8 +48,8 @@ def base(company: Company, market_inputs: MarketInputs) -> dict[str, object]:
     }
 
 
-def _result(base: dict[str, object], **overrides: object) -> ValuationResult:
-    return ValuationResult(**{**base, **overrides})  # type: ignore[arg-type]
+def _result(base: dict[str, object], **overrides: object) -> FcffCfoValuationResult:
+    return FcffCfoValuationResult(**{**base, **overrides})  # type: ignore[arg-type]
 
 
 def test_peso_valor_terminal(base: dict[str, object]) -> None:

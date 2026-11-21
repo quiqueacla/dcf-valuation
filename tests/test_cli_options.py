@@ -190,7 +190,7 @@ def test_banco_se_valora_con_fcfe_por_la_tabla(
     monkeypatch.setattr(cli, "fetch_company", _fake_fetch)
     assert cli.main(_two_tickers(tmp_path), now=NOW) == 0
     out = capsys.readouterr().out
-    assert "fcff, WACC" in _line(out, "AAA") and "AVISO" not in _line(out, "AAA")
+    assert "fcff_cfo, WACC" in _line(out, "AAA") and "AVISO" not in _line(out, "AAA")
     assert "fcfe, Ke" in _line(out, "BANCO") and "AVISO" not in _line(out, "BANCO")
     report = (tmp_path / "out" / "BANCO_20261118T120000Z.md").read_text(encoding="utf-8")
     assert "# Valoración DCF (FCFE)" in report and "Aviso de modelo" not in report
@@ -200,8 +200,8 @@ def test_modelo_forzado_avisa_si_no_es_adecuado(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(cli, "fetch_company", _fake_fetch)
-    assert cli.main(_two_tickers(tmp_path, "--model", "fcff"), now=NOW) == 0
+    assert cli.main(_two_tickers(tmp_path, "--model", "fcff_cfo"), now=NOW) == 0
     banco = _line(capsys.readouterr().out, "BANCO")
-    assert "fcff, WACC" in banco and "AVISO: tipo banco, el modelo fcff" in banco
+    assert "fcff_cfo, WACC" in banco and "AVISO: tipo banco, el modelo fcff_cfo" in banco
     report = (tmp_path / "out" / "BANCO_20261118T120000Z.md").read_text(encoding="utf-8")
     assert "**Aviso de modelo:** Empresa de tipo banco" in report

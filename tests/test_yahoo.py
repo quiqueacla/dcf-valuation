@@ -18,7 +18,7 @@ from dcf.data.yahoo import YahooRawData, build_company, load_raw, normalize_pric
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
 from dcf.model.wacc import compute_wacc
-from dcf.valuation.fcff import value_company
+from dcf.valuation.fcff_cfo import value_company
 
 REL = 1e-9
 FX = 0.9

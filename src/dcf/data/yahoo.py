@@ -463,7 +463,7 @@ def _build_company(
 
     columns = _select_columns(raw, historical_years, warnings)
     inc, cf, bs = raw.income_stmt, raw.cashflow, raw.balance_sheet
-    fcff = model is ValuationModel.FCFF
+    fcff = model is ValuationModel.FCFF_CFO
 
     historicals: list[HistoricalYear] = []
     debt_cost: list[DebtCostYear] = []

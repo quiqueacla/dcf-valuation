@@ -31,7 +31,7 @@ from dcf.model.fcfe_projection import compute_fcfe_ratios, project_fcfe, termina
 from dcf.reports.markdown import render_report
 from dcf.valuation.fcfe import value_company
 from dcf.valuation.fcfe_result import FcfeValuationResult
-from dcf.valuation.fcff_result import ValuationResult
+from dcf.valuation.fcff_cfo_result import FcffCfoValuationResult
 from dcf.valuation.run import run_valuation
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName
 
@@ -177,14 +177,14 @@ def test_run_valuation_elige_el_modelo(
 ) -> None:
     a = Assumptions(G, projection_years=2)
     assert isinstance(run_valuation(bank, market_inputs, a, NOW), FcfeValuationResult)
-    assert isinstance(run_valuation(company, market_inputs, a, NOW), ValuationResult)
+    assert isinstance(run_valuation(company, market_inputs, a, NOW), FcffCfoValuationResult)
 
 
 def test_fcff_sobre_un_banco_falla_con_dato_ausente(
     bank: Company, market_inputs: MarketInputs
 ) -> None:
     forced = dataclasses.replace(
-        bank, info=dataclasses.replace(bank.info, valuation_model=ValuationModel.FCFF)
+        bank, info=dataclasses.replace(bank.info, valuation_model=ValuationModel.FCFF_CFO)
     )
     with pytest.raises(ValueError, match="impuestos"):
         run_valuation(forced, market_inputs, Assumptions(G, projection_years=2), NOW)

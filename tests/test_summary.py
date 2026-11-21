@@ -24,7 +24,7 @@ from dcf.reports.summary import (
     summary_frame,
     summary_row,
 )
-from dcf.valuation import fcfe, fcff
+from dcf.valuation import fcfe, fcff_cfo
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 from tests.test_cli_options import _fake_fetch
 from tests.test_fcfe import bank  # noqa: F401 (fixture)
@@ -36,9 +36,9 @@ COST = ScenarioConfig(frozenset({ScenarioMode.COST}), 0.01, 0.005)
 
 
 def test_fila_fcff(company: Company, market_inputs: MarketInputs) -> None:
-    r = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
     row = summary_row(company, r, "config/settings.toml")
-    assert (row.ticker, row.model, row.rate_name) == ("TEST", "fcff", "WACC")
+    assert (row.ticker, row.model, row.rate_name) == ("TEST", "fcff_cfo", "WACC")
     assert row.neutral == pytest.approx(30.369973030961113, rel=REL)
     assert row.upside(row.neutral) == pytest.approx(30.369973030961113 / 10 - 1, rel=REL)
     assert row.bearish is not None and row.bullish is not None
@@ -64,7 +64,7 @@ def test_avisos_incluyen_modelo_y_escenarios_no_validos(
     company: Company, market_inputs: MarketInputs
 ) -> None:
     # g = 2,5 % y alcista g + 0,5 = 3 % = rf → escenario alcista no válido.
-    r = fcff.value_company(company, market_inputs, Assumptions(0.025), NOW, COST)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.025), NOW, COST)
     row = summary_row(company, r, "x")
     assert row.bullish is None
     assert any(w.startswith("Escenario alcista no válido") for w in row.warnings)
@@ -72,12 +72,12 @@ def test_avisos_incluyen_modelo_y_escenarios_no_validos(
 
 
 def test_markdown(company: Company, market_inputs: MarketInputs) -> None:
-    r = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
     rows = [summary_row(company, r, "config/settings.toml"), error_row("MALO", "falta EBIT")]
     md = render_summary(rows, NOW, "0.1.0")
     assert "# Resumen de valoraciones DCF" in md and "no es una recomendación" in md
     assert "Tickers valorados: 1 de 2" in md
-    assert "| **TEST** | Empresa Sintética S.A. | fcff | 10,00 € |" in md
+    assert "| **TEST** | Empresa Sintética S.A. | fcff_cfo | 10,00 € |" in md
     assert "**30,37 €** | 203,70 % |" in md
     assert "WACC 8,13 %" in md and "Fuente de g" in md
     assert "## Tickers no valorados" in md and "**MALO**: falta EBIT" in md
@@ -85,7 +85,7 @@ def test_markdown(company: Company, market_inputs: MarketInputs) -> None:
 
 
 def test_csv_formato_excel_espanol(company: Company, market_inputs: MarketInputs) -> None:
-    r = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
     rows = [summary_row(company, r, "x"), error_row("MALO", "falta EBIT")]
     text = summary_csv(rows)
     header = text.splitlines()[0].split(CSV_SEPARATOR)
@@ -116,7 +116,7 @@ def test_cli_guarda_resumen_con_errores(
         encoding="utf-8-sig",
     )
     assert list(df["ticker"]) == ["AAA", "MALO", "BANCO"]
-    assert list(df["modelo"].fillna("")) == ["fcff", "", "fcfe"]
+    assert list(df["modelo"].fillna("")) == ["fcff_cfo", "", "fcfe"]
     assert list(df["tasa"].fillna("")) == ["WACC", "", "Ke"]
     assert set(df["fuente_g"].dropna()) == {"argumento --set"}
     assert "Total Revenue" in df["error"].iloc[1]

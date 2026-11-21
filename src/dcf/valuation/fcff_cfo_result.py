@@ -13,7 +13,7 @@ import pandas as pd
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.discount_rate import DiscountRateChoice
-from dcf.model.fcff_ratios import HistoricalRatios
+from dcf.model.fcff_cfo_ratios import HistoricalRatios
 from dcf.model.revenue_projection import RevenueSource
 from dcf.model.terminal_value import validate_terminal_growth
 from dcf.model.wacc import WaccResult
@@ -21,7 +21,7 @@ from dcf.valuation.scenarios import ScenarioResult
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectedYear:
+class FcffCfoProjectedYear:
     """Un año de la proyección explícita.
 
     Attributes:
@@ -46,7 +46,7 @@ class ProjectedYear:
 
 
 @dataclass(frozen=True)
-class ValuationResult:
+class FcffCfoValuationResult:
     """Resultado de la valoración con todo lo necesario para reproducirla.
 
     Attributes:
@@ -84,7 +84,7 @@ class ValuationResult:
     wacc: WaccResult | None
     discount_rate: DiscountRateChoice
     market_inputs: MarketInputs
-    projections: tuple[ProjectedYear, ...]
+    projections: tuple[FcffCfoProjectedYear, ...]
     projection_growth: float
     terminal_value: float
     terminal_value_present: float

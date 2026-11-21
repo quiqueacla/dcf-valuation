@@ -70,7 +70,8 @@ Notas:
    `--set g=2%`. En el mismo fichero se eligen los modos de escenario (`ventas`, `coste`).
 3. Opcional: revisa `config/company_types.toml`, la tabla que clasifica cada empresa como
    industrial, banco, aseguradora o inmobiliaria según su sector e industria de Yahoo y fija su
-   modelo: **FCFF** (flujo para la empresa, descontado al WACC) para industriales y
+   modelo: **FCFF** (`fcff_cfo`: flujo para la empresa desde el CFO, descontado al WACC) para
+   industriales y
    **FCFE** (flujo para el accionista, descontado a Ke) para bancos y aseguradoras. Las
    inmobiliarias se valoran con FCFF y el informe avisa de que el modelo puede no ser adecuado.
 
@@ -87,7 +88,7 @@ dcf ITX.MC --set g=2% --set modes=ventas,coste  # ajustar supuestos sin tocar el
 dcf ITX.MC --set wacc_shift=1.5% --set projection_years=7
 python -m dcf ITX.MC --no-extras                # sin escenarios (más rápido)
 dcf SAN.MC MAP.MC                               # financieras: modelo FCFE automático
-dcf SAN.MC --model fcff                         # forzar un modelo (avisa si no es adecuado)
+dcf SAN.MC --model fcff_cfo                     # forzar un modelo (avisa si no es adecuado)
 dcf ITX.MC --from-cache data/cache/ITX.MC/20261118T103000Z   # repetir sin red
 ```
 

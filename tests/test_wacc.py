@@ -107,3 +107,12 @@ def test_kd_por_defecto_no_negativo() -> None:
         MarketInputs(
             MarketRate(0.03, "x", NOW), MarketRate(0.05, "x", NOW), MarketRate(-0.01, "x", NOW)
         )
+
+
+def test_t_del_wacc_es_la_mediana(company: Company, market_inputs: MarketInputs) -> None:
+    # t = 25 %, 91,64 %, 25 %, 25 % → media 41,6 %, mediana 25 %: el año anómalo no cuenta.
+    debt = list(company.debt_cost_data)
+    debt[1] = dataclasses.replace(debt[1], tax_provision=debt[1].pretax_income * 0.9164)
+    w = compute_wacc(dataclasses.replace(company, debt_cost_data=tuple(debt)), market_inputs)
+    assert w.tax_rate == pytest.approx(0.25, rel=REL)
+    assert w.tax_rate_by_year[2023] == pytest.approx(0.9164, rel=REL)

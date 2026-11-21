@@ -25,9 +25,10 @@ SENSITIVITY_GROWTH_STEP = 0.005
 SENSITIVITY_STEPS_EACH_SIDE = 2
 """Pasos a cada lado del valor central: tabla 5 × 5. Motivo: legible en un informe."""
 
-DEFAULT_VALUATION_MODEL = "fcff"
+DEFAULT_VALUATION_MODEL = "fcff_cfo"
 """Modelo para empresas industriales, sin clasificar o sin ``model`` en la tabla de tipos.
 
-Motivo: el FCFF es el modelo original del proyecto, pensado para empresas industriales
-(decisión del usuario, 2026-11-19).
+Motivo: el FCFF desde el CFO es el modelo original del proyecto, pensado para empresas
+industriales (decisión del usuario, 2026-11-19; el fcff desde el EBIT se eliminó el
+2026-11-21).
 """

@@ -43,7 +43,7 @@
 # source = ""
 # date = AAAA-MM-DD
 
-# OPCIONAL. Tasa de descuento forzada por ticker: sustituye al WACC (modelo fcff) o a Ke
+# OPCIONAL. Tasa de descuento forzada por ticker: sustituye al WACC (modelo fcff_cfo) o a Ke
 # (modelo fcfe) calculados, que pasan a ser informativos. Precedencia:
 # --set rate=... (todos los tickers) > esta sección > calculada.
 # Solo por ticker: no hay valor general en el fichero.

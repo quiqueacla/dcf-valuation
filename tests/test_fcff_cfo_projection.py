@@ -9,8 +9,8 @@ import dataclasses
 import pytest
 
 from dcf.company import Company, RevenueEstimate
-from dcf.model.fcff_projection import project_cash_flows
-from dcf.model.fcff_ratios import compute_historical_ratios
+from dcf.model.fcff_cfo_projection import project_cash_flows
+from dcf.model.fcff_cfo_ratios import compute_historical_ratios
 from dcf.model.revenue_projection import RevenueSource
 
 REL = 1e-9

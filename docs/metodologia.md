@@ -8,13 +8,15 @@ Hay dos modelos de valoración. El modelo se elige por tipo de empresa en
 
 | Modelo | Para | Flujo | Tasa | Secciones |
 |---|---|---|---|---|
-| `fcff` | Industriales (por defecto) | FCFF, flujo para accionistas y acreedores | WACC | §1-§9 |
+| `fcff_cfo` | Industriales (por defecto) | FCFF desde el CFO: Net Income × FCFF/Net Income | WACC | §1-§9 |
 | `fcfe` | Bancos y aseguradoras | FCFE, flujo para el accionista | Ke | §10 (y las comunes de §1-§9) |
 
-Código: `model/fcff_*`, `model/wacc.py`, `valuation/fcff*.py`, `reports/fcff_markdown.py` para
-FCFF; `model/fcfe_projection.py`, `valuation/fcfe*.py`, `reports/fcfe_markdown.py` para FCFE.
-Común: `model/revenue_projection.py` (ventas y Net Income), `model/cost_of_equity.py` (Ke y
-beta), `valuation/discounting.py` (descuento, sensibilidad, escenarios), `reports/format.py`.
+Código: `model/fcff_cfo_*`, `model/wacc.py`, `valuation/fcff_cfo*.py`, `valuation/enterprise.py`
+(VE, puente, sensibilidad, escenarios), `reports/fcff_cfo_markdown.py` y
+`reports/enterprise_markdown.py` para fcff_cfo; `model/fcfe_projection.py`, `valuation/fcfe*.py`
+y `reports/fcfe_markdown.py` para fcfe. Común a los dos: `model/revenue_projection.py` (ventas
+y Net Income), `model/cost_of_equity.py` (Ke y beta), `model/tax.py` (t efectivo),
+`model/discount_rate.py`, `valuation/discounting.py`, `valuation/run.py`, `reports/format.py`.
 
 ## 1. Datos históricos
 
@@ -32,8 +34,9 @@ Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
 
 ### Correspondencia con Yahoo Finance
 
-"Obligatorio" se refiere al modelo FCFF. Con FCFE solo son obligatorios ventas, Net Income,
-fondos propios, acciones diluidas y cotización; el resto se carga si está (`None` si no).
+"Obligatorio" se refiere al modelo `fcff_cfo`. Con FCFE solo son obligatorios ventas, Net
+Income, fondos propios, acciones diluidas y cotización; el resto se carga si está (`None` si
+no).
 
 | Dato del modelo | Fila de Yahoo | Estado | Tratamiento |
 |---|---|---|---|
@@ -74,8 +77,8 @@ fondos propios, acciones diluidas y cotización; el resto se carga si está (`No
   `industrial`, `banco`, `aseguradora` o `inmobiliaria` con la tabla `config/company_types.toml`,
   que usa las claves `industryKey` (primero) y `sectorKey`. Lo que no encaja es `industrial`;
   sin sector ni industria queda sin clasificar, con aviso. La misma tabla fija el modelo de
-  cada tipo (`model`): `fcfe` para bancos y aseguradoras, `fcff` para el resto. Modelos
-  adecuados: industrial → fcff; banco y aseguradora → fcfe; inmobiliaria → ninguno de los dos
+  cada tipo (`model`): `fcfe` para bancos y aseguradoras, `fcff_cfo` para el resto. Modelos
+  adecuados: industrial → fcff_cfo; banco y aseguradora → fcfe; inmobiliaria → ninguno de los dos
   (el valor está en los activos: NAV, FFO). Si el modelo aplicado no es adecuado para el tipo
   (o el tipo no se ha clasificado), se valora igual, pero el informe y el resumen de la línea
   de comandos lo avisan.
@@ -126,7 +129,7 @@ WACC = E/(D+E) · Ke + D/(D+E) · Kd · (1 − t)
 | β | Beta de la acción | Según `[beta].mode` de `market_inputs.toml` (ver abajo). Por defecto Yahoo Finance (5 años, datos mensuales) |
 | Ke | CAPM: rf + β · PRM | — |
 | Kd | Media de los Kd_i = Intereses_i / Deuda total_i | Históricos. Se excluyen años con deuda 0. Años sin intereses publicados: Kd_i = `[default_cost_of_debt]` |
-| t | Media de los t_i = Provisión_i / BAI_i válidos | Históricos (mismos criterios de exclusión que §2) |
+| t | **Mediana** de los t_i = Provisión_i / BAI_i válidos | Históricos (mismos criterios de exclusión que §2). La mediana evita que un año anómalo (SCYR.MC 2023: 91,6 %) distorsione el ahorro fiscal |
 | E | Cotización × acciones diluidas (valor de mercado) | Último dato |
 | D | Deuda financiera total (valor contable) | Último balance |
 
@@ -281,3 +284,4 @@ desplaza Ke con `wacc_shift`).
   del Net Income.
 - Las betas de Yahoo de algunas financieras son muy bajas (CABK.MC 0,12; MAP.MC 0,29 el
   2026-11-19): conviene revisarlas con `[beta]` en `market_inputs.toml`.
+

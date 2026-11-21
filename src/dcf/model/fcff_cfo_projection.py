@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dcf.company import Company
-from dcf.model.fcff_ratios import HistoricalRatios
+from dcf.model.fcff_cfo_ratios import HistoricalRatios
 from dcf.model.revenue_projection import EstimateCase, RevenueSource, project_revenue
 
 

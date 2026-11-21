@@ -1,4 +1,4 @@
-"""Modelo FCFF: ratios históricos que alimentan la proyección (funciones puras, sin I/O).
+"""Modelo FCFF_CFO: ratios históricos que alimentan la proyección (funciones puras, sin I/O).
 
 Fórmulas en ``docs/metodologia.md`` §2. Tasas en decimal (0.08 = 8 %), importes en EUR.
 """
@@ -9,10 +9,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from dcf.company import Company, DebtCostYear, HistoricalYear, ValuationModel, required
+from dcf.company import Company, HistoricalYear, ValuationModel, required
 from dcf.model.revenue_projection import net_margin_by_year, revenue_growth_by_year
+from dcf.model.tax import effective_tax_rate
 
-FCFF = ValuationModel.FCFF
+FCFF = ValuationModel.FCFF_CFO
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,25 +43,6 @@ class HistoricalRatios:
     average_net_margin: float
     average_fcff_to_net_income: float
     warnings: tuple[str, ...]
-
-
-# Tipo efectivo provisión/BAI; devuelve None y el motivo si no tiene sentido económico.
-def effective_tax_rate(debt_year: DebtCostYear) -> tuple[float | None, str | None]:
-    """Calcula el tipo impositivo efectivo de un ejercicio.
-
-    Args:
-        debt_year: Datos del ejercicio con BAI y provisión de impuestos (EUR).
-
-    Returns:
-        ``(t, None)`` con t en decimal si es válido, o ``(None, motivo)`` si el BAI es
-        ≤ 0 o t queda fuera de [0, 1].
-    """
-    if debt_year.pretax_income <= 0:
-        return None, f"BAI ≤ 0 ({debt_year.pretax_income:,.0f} EUR)"
-    rate = debt_year.tax_provision / debt_year.pretax_income
-    if not 0.0 <= rate <= 1.0:
-        return None, f"tipo efectivo {rate:.1%} fuera de [0 %, 100 %]"
-    return rate, None
 
 
 # FCFF histórico = CFO + intereses·(1 − t) − Capex.

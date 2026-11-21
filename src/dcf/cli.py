@@ -87,7 +87,7 @@ def _parser() -> argparse.ArgumentParser:
         "--model",
         choices=[m.value for m in ValuationModel],
         help="Fuerza el modelo de valoración (por defecto, el de la tabla de tipos: fcfe para "
-        "bancos y aseguradoras, fcff para el resto)",
+        "bancos y aseguradoras, fcff_cfo para el resto)",
     )
     p.add_argument(
         "-o",

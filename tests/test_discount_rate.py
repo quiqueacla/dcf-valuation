@@ -24,7 +24,7 @@ from dcf.model.discount_rate import choose_discount_rate, rate_warnings
 from dcf.reports.markdown import render_report
 from dcf.reports.summary import summary_row
 from dcf.settings import apply_overrides
-from dcf.valuation import fcfe, fcff
+from dcf.valuation import fcfe, fcff_cfo
 from dcf.valuation.run import run_valuation
 from tests.test_cli_options import BASE
 from tests.test_fcfe import bank  # noqa: F401 (fixture)
@@ -73,7 +73,7 @@ def test_override_no_positivo_es_error() -> None:
 
 
 def test_fcff_con_wacc_forzado(company: Company, market_inputs: MarketInputs) -> None:
-    r = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
     assert r.discount_rate.value == 0.10
     assert r.wacc is not None and r.wacc.wacc == pytest.approx(0.08125, rel=REL)  # informativo
     assert [p.discount_factor for p in r.projections] == pytest.approx(
@@ -81,7 +81,7 @@ def test_fcff_con_wacc_forzado(company: Company, market_inputs: MarketInputs) ->
     )
     assert r.sensitivity.loc[0.10, 0.02] == pytest.approx(r.value_per_share, rel=REL)
     assert any("forzada al 10,00 %" in w for w in r.warnings)
-    base = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW)
+    base = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW)
     assert r.value_per_share < base.value_per_share  # WACC mayor → menor valor
 
 
@@ -92,8 +92,8 @@ def test_fcff_beta_negativa_con_override_es_aviso(
         company, balance=dataclasses.replace(company.balance, beta=-0.181)
     )
     with pytest.raises(ValueError, match="negativa"):
-        fcff.value_company(negative, market_inputs, Assumptions(0.02), NOW)
-    r = fcff.value_company(negative, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
+        fcff_cfo.value_company(negative, market_inputs, Assumptions(0.02), NOW)
+    r = fcff_cfo.value_company(negative, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
     assert r.wacc is None and r.discount_rate.calculation_error is not None
     md = render_report(negative, r)
     assert "Tasa de descuento forzada: WACC = 10,00 %" in md
@@ -104,7 +104,7 @@ def test_rechaza_g_mayor_o_igual_que_la_tasa_forzada(
     company: Company, market_inputs: MarketInputs
 ) -> None:
     with pytest.raises(ValueError, match="WACC"):
-        fcff.value_company(
+        fcff_cfo.value_company(
             company,
             market_inputs,
             Assumptions(0.025),
@@ -206,7 +206,7 @@ def test_cli_set_rate(tmp_path: Path) -> None:
 
 
 def test_resumen_indica_tasa_forzada(company: Company, market_inputs: MarketInputs) -> None:
-    r = fcff.value_company(company, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, rate_override=TEN)
     row = summary_row(company, r, "x")
     assert row.discount_rate == 0.10 and row.rate_sources is not None
     assert row.rate_sources.startswith("forzado (prueba, 2026-11-21); calculado 8,13 %: rf")

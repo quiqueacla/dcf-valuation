@@ -13,7 +13,7 @@ from dcf.model.cost_of_equity import MarketInputs
 from dcf.reports.format import num as _num
 from dcf.reports.markdown import render_report
 from dcf.settings import load_settings
-from dcf.valuation.fcff import value_company
+from dcf.valuation.fcff_cfo import value_company
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 from tests.test_yahoo import _raw
 

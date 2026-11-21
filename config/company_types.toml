@@ -3,9 +3,9 @@
 # con guiones), no los nombres que se muestran en el informe.
 #
 # Orden de búsqueda: primero la industria en todas las secciones, después el sector.
-# Lo que no encaje con ninguna regla es "industrial" y se valora con el modelo fcff.
+# Lo que no encaje con ninguna regla es "industrial" y se valora con el modelo fcff_cfo.
 # Tipos válidos: banco, aseguradora, inmobiliaria.
-# model (opcional): "fcff" (por defecto) o "fcfe". Se puede forzar con dcf --model.
+# model (opcional): "fcff_cfo" (por defecto) o "fcfe". Se puede forzar con dcf --model.
 #
 # Claves comprobadas con Yahoo el 2026-11-19: SAN.MC y JPM (banks-diversified),
 # CABK.MC (banks-regional), MAP.MC y ALV.DE (insurance-diversified),
@@ -27,6 +27,6 @@ industries = [
 ]
 
 [inmobiliaria]
-# Sin modelo adecuado todavía: se valora con fcff y el informe lo avisa.
+# Sin modelo adecuado todavía: se valora con fcff_cfo y el informe lo avisa.
 # Todo el sector: SOCIMI/REIT (reit-*), promotoras y servicios inmobiliarios.
 sectors = ["real-estate"]

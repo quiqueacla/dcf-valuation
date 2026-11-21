@@ -174,7 +174,7 @@ def test_seccion_beta_invalida(tmp_path: Path, extra: str, match: str) -> None:
 def test_informe_indica_origen_y_motivo(company: Company, market_inputs: MarketInputs) -> None:
     from dcf.model.assumptions import Assumptions
     from dcf.reports.markdown import render_report
-    from dcf.valuation.fcff import value_company
+    from dcf.valuation.fcff_cfo import value_company
 
     c = _with_beta(company, -0.181)
     m = _inputs(market_inputs, BetaMode.YAHOO_FILE, MANUAL)

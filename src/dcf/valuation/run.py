@@ -1,4 +1,4 @@
-"""Elige el modelo de valoración (FCFF o FCFE) según la compañía. Puro, sin I/O."""
+"""Elige el modelo de valoración (fcff_cfo o fcfe) según la compañía. Puro, sin I/O."""
 
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ from datetime import datetime
 from dcf.company import Company, ValuationModel
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
-from dcf.valuation import fcfe, fcff
+from dcf.valuation import fcfe, fcff_cfo
 from dcf.valuation.fcfe_result import FcfeValuationResult
-from dcf.valuation.fcff_result import ValuationResult
+from dcf.valuation.fcff_cfo_result import FcffCfoValuationResult
 from dcf.valuation.scenarios import ScenarioConfig
 
-AnyValuationResult = ValuationResult | FcfeValuationResult
-"""Resultado de cualquiera de los dos modelos."""
+AnyValuationResult = FcffCfoValuationResult | FcfeValuationResult
+"""Resultado de cualquiera de los modelos."""
 
 
 # Valora con el modelo para el que se cargaron los datos (company.info.valuation_model).
@@ -25,7 +25,7 @@ def run_valuation(
     scenario_config: ScenarioConfig | None = None,
     argument_rate: MarketRate | None = None,
 ) -> AnyValuationResult:
-    """Valora la compañía con su modelo: FCFF (empresas industriales) o FCFE (financieras).
+    """Valora la compañía con su modelo: fcff_cfo (industriales) o fcfe (financieras).
 
     Tasa de descuento (WACC o Ke), por precedencia: ``argument_rate`` (``--set rate``) >
     ``[discount_rate."TICKER"]`` de ``market_inputs.toml`` > calculada.
@@ -49,6 +49,6 @@ def run_valuation(
         return fcfe.value_company(
             company, market_inputs, assumptions, valuation_date, scenario_config, override
         )
-    return fcff.value_company(
+    return fcff_cfo.value_company(
         company, market_inputs, assumptions, valuation_date, scenario_config, override
     )

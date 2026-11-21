@@ -34,15 +34,16 @@ class CompanyType(StrEnum):
 class ValuationModel(StrEnum):
     """Modelo de valoración (``docs/metodologia.md``)."""
 
-    FCFF = "fcff"
-    """Flujo de caja libre para la empresa descontado al WACC; puente VE → fondos propios."""
+    FCFF_CFO = "fcff_cfo"
+    """FCFF desde el CFO: Net Income × media histórica de FCFF/Net Income, al WACC; puente
+    VE → fondos propios (industriales)."""
     FCFE = "fcfe"
     """Flujo de caja libre para el accionista descontado a Ke (financieras)."""
 
 
 # Modelos adecuados para cada tipo de empresa (conocimiento del modelo, no configuración).
 SUITABLE_MODELS: dict[CompanyType, frozenset[ValuationModel]] = {
-    CompanyType.INDUSTRIAL: frozenset({ValuationModel.FCFF}),
+    CompanyType.INDUSTRIAL: frozenset({ValuationModel.FCFF_CFO}),
     CompanyType.BANK: frozenset({ValuationModel.FCFE}),
     CompanyType.INSURANCE: frozenset({ValuationModel.FCFE}),
     CompanyType.REAL_ESTATE: frozenset(),
@@ -50,11 +51,11 @@ SUITABLE_MODELS: dict[CompanyType, frozenset[ValuationModel]] = {
 
 # Motivo por el que un modelo no es adecuado para un tipo de empresa.
 UNSUITABLE_NOTES: dict[tuple[CompanyType, ValuationModel], str] = {
-    (CompanyType.BANK, ValuationModel.FCFF): (
+    (CompanyType.BANK, ValuationModel.FCFF_CFO): (
         "en un banco la deuda es materia prima del negocio, así que el FCFF y el WACC no "
         "son significativos; usa el modelo fcfe"
     ),
-    (CompanyType.INSURANCE, ValuationModel.FCFF): (
+    (CompanyType.INSURANCE, ValuationModel.FCFF_CFO): (
         "en una aseguradora las primas invertidas y las reservas técnicas hacen que el FCFF "
         "y la deuda no sean comparables; usa el modelo fcfe"
     ),
@@ -73,7 +74,7 @@ REAL_ESTATE_NOTE = (
 
 # Aviso si el modelo aplicado no es adecuado para el tipo de empresa; None si lo es.
 def model_suitability_warning(
-    company_type: CompanyType | None, model: ValuationModel = ValuationModel.FCFF
+    company_type: CompanyType | None, model: ValuationModel = ValuationModel.FCFF_CFO
 ) -> str | None:
     """Explica si el modelo de valoración no es adecuado para el tipo de empresa.
 
@@ -202,7 +203,7 @@ class CompanyInfo:
     sector: str | None = None
     industry: str | None = None
     company_type: CompanyType | None = None
-    valuation_model: ValuationModel = ValuationModel.FCFF
+    valuation_model: ValuationModel = ValuationModel.FCFF_CFO
 
     # Valida identificación, fechas con zona y coherencia de los tipos de cambio.
     def __post_init__(self) -> None:
