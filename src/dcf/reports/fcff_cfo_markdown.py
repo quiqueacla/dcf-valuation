@@ -7,7 +7,11 @@ proyecciones, 4) valor intrínseco con escenarios y sensibilidad. Formato en
 
 from __future__ import annotations
 
+import numpy as np
+
 from dcf.company import Company
+from dcf.model.returns import historical_roic
+from dcf.model.tax import tax_rates
 from dcf.reports.enterprise_markdown import value_section, wacc_section
 from dcf.reports.format import (
     SOURCE_LABEL,
@@ -16,6 +20,7 @@ from dcf.reports.format import (
     num,
     pct,
     report_header,
+    roic_rows,
     table,
     warnings_block,
 )
@@ -29,10 +34,15 @@ def _history_section(
     r = result.ratios
     years = [h.fiscal_year for h in company.historicals]
     by_year = {h.fiscal_year: h for h in company.historicals}
+    t = tax_rates(company.debt_cost_data, "el t del NOPAT").median
+    ebit = {d.fiscal_year: d.ebit for d in company.debt_cost_data}
 
     def row(label: str, values: list[str], mean: str = "") -> list[str]:
         return [label, *values, mean]
 
+    nopat, *capital = roic_rows(historical_roic(company, t), years, t, scale, unit)
+    # Cascada: ventas → EBIT → intereses e impuestos → NOPAT y Net Income → caja (FCFF)
+    # → rentabilidad del capital.
     hist_rows = [
         row(f"Ventas ({unit})", [amount(by_year[y].revenue, scale) for y in years]),
         row(
@@ -40,6 +50,19 @@ def _history_section(
             [pct(r.revenue_growth_by_year.get(y)) for y in years],
             pct(r.average_revenue_growth),
         ),
+        row(f"EBIT ({unit})", [amount(ebit.get(y), scale) for y in years]),
+        row(
+            "Margen EBIT",
+            [pct(ebit[y] / by_year[y].revenue) if y in ebit else "—" for y in years],
+            pct(float(np.mean([ebit[y] / by_year[y].revenue for y in years if y in ebit]))),
+        ),
+        row(f"− Intereses ({unit})", [amount(by_year[y].interest_expense, scale) for y in years]),
+        row(
+            "t efectivo (columna Media: mediana)",
+            [pct(r.tax_rate_by_year.get(y)) for y in years],
+            pct(t),
+        ),
+        nopat,
         row(f"Net Income ({unit})", [amount(by_year[y].net_income, scale) for y in years]),
         row(
             "Margen neto",
@@ -47,9 +70,7 @@ def _history_section(
             pct(r.average_net_margin),
         ),
         row(f"CFO ({unit})", [amount(by_year[y].operating_cash_flow, scale) for y in years]),
-        row(f"Capex ({unit})", [amount(by_year[y].capital_expenditure, scale) for y in years]),
-        row(f"Intereses ({unit})", [amount(by_year[y].interest_expense, scale) for y in years]),
-        row("t efectivo", [pct(r.tax_rate_by_year.get(y)) for y in years]),
+        row(f"− Capex ({unit})", [amount(by_year[y].capital_expenditure, scale) for y in years]),
         row(
             f"FCFF = CFO + Int.·(1−t) − Capex ({unit})",
             [amount(r.fcff_by_year.get(y), scale) for y in years],
@@ -59,6 +80,7 @@ def _history_section(
             [num(r.fcff_to_net_income_by_year.get(y), 3) for y in years],
             num(r.average_fcff_to_net_income, 3),
         ),
+        *capital,
     ]
     proj = result.projections
     proj_rows = [

@@ -5,7 +5,7 @@ Funciones puras, sin I/O. Ver ``docs/metodologia.md`` §12. Tasas en decimal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import numpy as np
@@ -23,12 +23,20 @@ class HistoricalReturn:
         by_year: Rentabilidad de cada ejercicio con dato válido.
         mean: Media de los años válidos; ``None`` si no hay ninguno.
         warnings: Años excluidos y motivo.
+        profit_by_year: Beneficio del numerador de cada ejercicio, en EUR: NOPAT =
+            EBIT · (1 − t) en el ROIC (beneficio operativo después de impuestos, sin
+            efecto de la financiación); vacío en el ROE.
+        capital_by_year: Capital del denominador al cierre de cada ejercicio, en EUR:
+            capital invertido = deuda total + fondos propios − caja en el ROIC (lo que
+            financian accionistas y acreedores para operar); vacío en el ROE.
     """
 
     name: str
     by_year: dict[int, float]
     mean: float | None
     warnings: tuple[str, ...] = ()
+    profit_by_year: dict[int, float] = field(default_factory=dict)
+    capital_by_year: dict[int, float] = field(default_factory=dict)
 
     # Media como dato con origen, para el value driver.
     def as_rate(self, data_date: datetime) -> MarketRate | None:
@@ -56,9 +64,15 @@ def historical_roic(company: Company, tax_rate: float) -> HistoricalReturn:
         tax_rate: Tipo impositivo del NOPAT, en decimal.
 
     Returns:
-        ROIC por año (desde el segundo, sobre el capital invertido al inicio) y media.
+        ROIC por año (desde el segundo, sobre el capital invertido al inicio) y media,
+        con el NOPAT de cada año con EBIT y el capital invertido de cada cierre.
     """
     debt = {d.fiscal_year: d for d in company.debt_cost_data}
+    nopat = {
+        h.fiscal_year: debt[h.fiscal_year].ebit * (1.0 - tax_rate)
+        for h in company.historicals
+        if h.fiscal_year in debt
+    }
     invested: dict[int, float] = {}
     warnings: list[str] = []
     for h in company.historicals:
@@ -76,9 +90,9 @@ def historical_roic(company: Company, tax_rate: float) -> HistoricalReturn:
         if start <= 0:
             warnings.append(f"{curr.fiscal_year} excluido del ROIC: capital invertido inicial ≤ 0")
             continue
-        roic[curr.fiscal_year] = d.ebit * (1.0 - tax_rate) / start
+        roic[curr.fiscal_year] = nopat[curr.fiscal_year] / start
     mean = float(np.mean(list(roic.values()))) if roic else None
-    return HistoricalReturn("ROIC", roic, mean, tuple(warnings))
+    return HistoricalReturn("ROIC", roic, mean, tuple(warnings), nopat, invested)
 
 
 # ROE_i = Net Income_i / fondos propios_{i−1}.

@@ -267,3 +267,53 @@ def test_multiplo_de_salida_y_g_implicito(industrial: Company, market_inputs: Ma
     assert any("g implícito" in w for w in r.checks)
     with pytest.raises(ValueError, match="múltiplo"):
         _value(industrial, market_inputs, terminal=TerminalOptions(TerminalMethod.MULTIPLE))
+
+
+def test_informe_muestra_nopat_y_roic(industrial: Company, market_inputs: MarketInputs) -> None:
+    # NOPAT = EBIT · 0,75: 150 y 165; capital invertido = 200 + FP − 100: 750 y 800;
+    # ROIC 2025 = 165 / 750 = 22 % (sobre el capital al inicio del ejercicio).
+    years = tuple(
+        dataclasses.replace(h, stockholders_equity=fp, cash=100.0)
+        for h, fp in zip(industrial.historicals, (650.0, 700.0), strict=True)
+    )
+    company = dataclasses.replace(industrial, historicals=years)
+    md = render_report(company, _value(company, market_inputs), scale=1.0, unit="€")
+    assert "| NOPAT = EBIT × (1 − 25,00 %) (€) | 150,0 | 165,0 |  |" in md
+    assert "| Capital invertido = deuda + fondos propios − caja (€) | 750,0 | 800,0 |  |" in md
+    assert "| ROIC = NOPAT / capital invertido inicial | — | 22,00 % | 22,00 % |" in md
+
+
+def test_informe_fcff_cfo_muestra_nopat_y_roic(
+    company: Company, market_inputs: MarketInputs
+) -> None:
+    from dcf.valuation import fcff_cfo
+
+    md = render_report(
+        company, fcff_cfo.value_company(company, market_inputs, Assumptions(G), NOW), 1.0, "€"
+    )
+    assert "| EBIT (€) |" in md and "| Margen EBIT |" in md
+    assert (
+        "| NOPAT = EBIT × (1 − 25,00 %)" in md
+        and "| ROIC = NOPAT / capital invertido inicial |" in md
+    )
+
+
+# Posición de la primera fila que empieza por cada partida.
+def _order(md: str, labels: list[str]) -> list[int]:
+    start = md.index("### 3.1")
+    return [md.index(f"| {label}", start) for label in labels]
+
+
+def test_historicos_en_cascada(
+    industrial: Company, company: Company, market_inputs: MarketInputs
+) -> None:
+    from dcf.valuation import fcff_cfo
+
+    md = render_report(industrial, _value(industrial, market_inputs), 1.0, "€")
+    labels = ["Ventas", "EBIT (", "t efectivo", "NOPAT", "+ D&A", "− Capex", "FCFF =", "ROIC"]
+    assert _order(md, labels) == sorted(_order(md, labels))
+    r = fcff_cfo.value_company(company, market_inputs, Assumptions(G), NOW)
+    md = render_report(company, r, 1.0, "€")
+    labels = ["Ventas", "EBIT (", "− Intereses", "t efectivo", "NOPAT", "Net Income (", "CFO"]
+    labels += ["− Capex", "FCFF =", "FCFF / Net Income", "Capital invertido", "ROIC"]
+    assert _order(md, labels) == sorted(_order(md, labels))

@@ -19,6 +19,7 @@ from dcf.company import Company, model_suitability_warning
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import CostOfEquityResult
 from dcf.model.discount_rate import DiscountRateChoice
+from dcf.model.returns import HistoricalReturn
 from dcf.model.terminal_methods import TerminalValueResult
 from dcf.valuation.scenarios import ScenarioResult
 
@@ -461,3 +462,39 @@ def checks_block(checks: Sequence[str]) -> str:
         else "- Sin avisos: flujos históricos positivos, último año en línea y VT coherente."
     )
     return "\n### Comprobaciones de consistencia\n\n" + body + "\n"
+
+
+# Filas NOPAT, capital invertido y ROIC de la tabla de históricos (modelos FCFF y fcfe).
+def roic_rows(
+    roic: HistoricalReturn, years: list[int], tax_rate: float, scale: float, unit: str
+) -> list[list[str]]:
+    """Construye las filas de rentabilidad del capital de la tabla de históricos.
+
+    Args:
+        roic: ROIC histórico de :func:`dcf.model.returns.historical_roic`.
+        years: Ejercicios de las columnas.
+        tax_rate: t del NOPAT (mediana de los tipos efectivos), en decimal.
+        scale: Divisor de los importes.
+        unit: Etiqueta de la unidad.
+
+    Returns:
+        Filas [partida, valores por año, media]; el ROIC del primer año queda vacío
+        porque se mide sobre el capital invertido al inicio del ejercicio.
+    """
+    return [
+        [
+            f"NOPAT = EBIT × (1 − {pct(tax_rate)}) ({unit})",
+            *[amount(roic.profit_by_year.get(y), scale) for y in years],
+            "",
+        ],
+        [
+            f"Capital invertido = deuda + fondos propios − caja ({unit})",
+            *[amount(roic.capital_by_year.get(y), scale) for y in years],
+            "",
+        ],
+        [
+            "ROIC = NOPAT / capital invertido inicial",
+            *[pct(roic.by_year.get(y)) for y in years],
+            pct(roic.mean),
+        ],
+    ]

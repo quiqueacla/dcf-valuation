@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dcf.company import Company
 from dcf.model.fcff_projection import FcffRatios
+from dcf.model.returns import historical_roic
 from dcf.reports.enterprise_markdown import value_section, wacc_section
 from dcf.reports.format import (
     SOURCE_LABEL,
@@ -16,6 +17,7 @@ from dcf.reports.format import (
     num,
     pct,
     report_header,
+    roic_rows,
     table,
     warnings_block,
 )
@@ -44,6 +46,10 @@ def fcff_history_rows(
     def row(label: str, values: list[str], mean: str = "") -> list[str]:
         return [label, *values, mean]
 
+    nopat, *capital = roic_rows(
+        historical_roic(company, r.tax_rate), years, r.tax_rate, scale, unit
+    )
+    # Cascada: ventas → EBIT → impuestos → NOPAT → + D&A − Capex − ΔNWC → FCFF → ROIC.
     hist_rows = [
         row(f"Ventas ({unit})", [amount(by_year[y].revenue, scale) for y in years]),
         row(
@@ -62,13 +68,14 @@ def fcff_history_rows(
             [pct(r.taxes.by_year.get(y)) for y in years],
             pct(r.tax_rate),
         ),
+        nopat,
         row(
-            "D&A / ventas",
+            "+ D&A / ventas",
             [pct(r.da_to_revenue_by_year.get(y)) for y in years],
             pct(r.average_da_to_revenue),
         ),
         row(
-            "Capex / ventas",
+            "− Capex / ventas",
             [pct(r.capex_to_revenue_by_year.get(y)) for y in years],
             pct(r.average_capex_to_revenue),
         ),
@@ -85,6 +92,7 @@ def fcff_history_rows(
             f"FCFF = EBIT·(1−t) + D&A − Capex − ΔNWC ({unit})",
             [amount(r.fcff_by_year.get(y), scale) for y in years],
         ),
+        *capital,
     ]
     return years, hist_rows
 

@@ -252,6 +252,12 @@ En una terminal el informe se muestra formateado con `rich`; si la salida se red
 Con el modelo FCFE el informe cambia la sección 2 (solo Ke, sin WACC ni Kd), la 3 (fondos
 propios, ROE y reinversión) y la 4 (sin puente deuda/caja; añade valor contable y P/VC).
 
+En los modelos fcff, fcff_cfo y fcfe, la tabla de históricos (3.1) incluye EBIT_i y margen EBIT,
+NOPAT_i = EBIT_i · (1 − t), con t la mediana de los tipos efectivos; capital invertido_i = deuda total + fondos
+propios − caja al cierre; y ROIC_i = NOPAT_i / capital invertido_{i−1}, con su media (el RONIC
+histórico del value driver, §12). El primer año no tiene ROIC (falta el capital inicial). En
+fcfe_fin se muestra el ROE.
+
 La sección 4 incluye la subsección **Valor terminal** (método, fórmula, datos del año N, VT,
 g implícito y múltiplo implícito) y **Comprobaciones de consistencia** con los avisos de §12.
 
