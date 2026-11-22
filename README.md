@@ -139,4 +139,5 @@ pytest -q
 ruff check . && mypy src
 ```
 
+Manual de usuario: [docs/manual_usuario.md](docs/manual_usuario.md).
 Metodología y fórmulas: [docs/metodologia.md](docs/metodologia.md).
