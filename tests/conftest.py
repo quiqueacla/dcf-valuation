@@ -11,6 +11,8 @@ from dcf.company import (
     DebtCostYear,
     HistoricalYear,
     RevenueEstimate,
+    TerminalMethod,
+    ValuationModel,
 )
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
 
@@ -36,6 +38,9 @@ def info() -> CompanyInfo:
         original_currency="EUR",
         fx_rate_to_eur=1.0,
         fx_date=None,
+        # Casos de referencia del modelo fcff_cfo con Gordon clásico (calculados a mano).
+        valuation_model=ValuationModel.FCFF_CFO,
+        terminal_method=TerminalMethod.GORDON,
     )
 
 

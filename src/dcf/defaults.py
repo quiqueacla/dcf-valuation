@@ -25,10 +25,35 @@ SENSITIVITY_GROWTH_STEP = 0.005
 SENSITIVITY_STEPS_EACH_SIDE = 2
 """Pasos a cada lado del valor central: tabla 5 × 5. Motivo: legible en un informe."""
 
-DEFAULT_VALUATION_MODEL = "fcff_cfo"
-"""Modelo para empresas industriales, sin clasificar o sin ``model`` en la tabla de tipos.
+DEFAULT_VALUATION_MODEL = "fcff"
+"""Modelo por defecto (industriales y tipos sin ``model`` ni sección ``[default]``).
 
-Motivo: el FCFF desde el CFO es el modelo original del proyecto, pensado para empresas
-industriales (decisión del usuario, 2026-11-19; el fcff desde el EBIT se eliminó el
-2026-11-21).
+Motivo: FCFF desde el EBIT (``docs/dcf_metodos.md`` §1.1), caso general; elección del
+usuario (2026-11-21).
+"""
+
+DEFAULT_TERMINAL_METHOD = "gordon_value_driver"
+"""Valor terminal por defecto: Gordon con value driver (``docs/dcf_metodos.md`` §3.3).
+
+Motivo: obliga a pagar la reinversión que sostiene g; elección del usuario (2026-11-21).
+"""
+
+LAST_FLOW_DEVIATION = 0.33
+"""Aviso si el último flujo histórico se desvía más de un 33 % de la media de los anteriores.
+
+Motivo: alertar de una valoración apoyada en un año puntual; elección del usuario
+(2026-11-21). Se puede cambiar en ``config/thresholds.toml``.
+"""
+
+IMPLIED_GROWTH_GAP = 0.0075
+"""Aviso si el g implícito en el valor terminal difiere más de 0,75 puntos del g supuesto.
+
+Motivo: comprobación de consistencia del VT; elección del usuario (2026-11-21).
+"""
+
+RONIC_TO_RATE = 2.0
+"""Aviso si el RONIC (o ROE) del value driver supera 2 veces la tasa de descuento.
+
+Motivo: la ventaja competitiva tiende a erosionarse; un RONIC muy superior a la tasa
+infla el VT. Elección del usuario (2026-11-21).
 """

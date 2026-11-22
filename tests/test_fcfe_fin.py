@@ -1,4 +1,4 @@
-"""Modelo FCFE sobre un banco sintético, calculado a mano (tolerancia relativa 1e-9).
+"""Modelo FCFE_FIN sobre un banco sintético, calculado a mano (tolerancia relativa 1e-9).
 
 Cifras inventadas y redondas (no son de ninguna entidad real):
 
@@ -7,9 +7,12 @@ Cifras inventadas y redondas (no son de ninguna entidad real):
 - 2026e: ventas 1210, NI 121, reinversión 0,10 × 1000 = 100, FCFE 21, FP 1100.
 - 2027e: ventas 1331, NI 133,1, reinversión 0,10 × 1100 = 110, FCFE 23,1, FP 1210.
 - Ke = 3 % + 1,2 × 5 % = 9 %; g = 2 %.
-- FCFE 2028 = 133,1 × 1,02 − 0,02 × 1210 = 111,562; VT = 111,562 / 0,07.
-- Fondos propios = 21 / 1,09 + 23,1 / 1,09² + VT / 1,09² = 1380,1305… → 13,80 € por acción
+- VT Gordon clásico (el de las financieras): 23,1 · 1,02 / 0,07 = 336,6.
+- Fondos propios = 21 / 1,09 + 23,1 / 1,09² + 336,6 / 1,09² = 322,0183… → 3,22 € por acción
   (100 acciones).
+- Value driver con ROE = NI_{N+1} / FP_N = 135,762 / 1210: NI_{N+1}·(1 − g/ROE) =
+  133,1 · 1,02 − 0,02 · 1210 = 111,562 (la fórmula anterior del VT); VT = 111,562 / 0,07 y
+  fondos propios 1380,1305… → 13,80 €.
 """
 
 import dataclasses
@@ -23,14 +26,16 @@ from dcf.company import (
     CompanyInfo,
     CompanyType,
     HistoricalYear,
+    TerminalMethod,
     ValuationModel,
 )
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
-from dcf.model.fcfe_projection import compute_fcfe_ratios, project_fcfe, terminal_fcfe
+from dcf.model.fcfe_fin_projection import compute_fcfe_fin_ratios, project_fcfe_fin
+from dcf.model.terminal_methods import TerminalOptions
 from dcf.reports.markdown import render_report
-from dcf.valuation.fcfe import value_company
-from dcf.valuation.fcfe_result import FcfeValuationResult
+from dcf.valuation.fcfe_fin import value_company
+from dcf.valuation.fcfe_fin_result import FcfeFinValuationResult
 from dcf.valuation.fcff_cfo_result import FcffCfoValuationResult
 from dcf.valuation.run import run_valuation
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName
@@ -38,7 +43,9 @@ from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode, ScenarioName
 REL = 1e-9
 NOW = datetime(2026, 11, 19, tzinfo=UTC)
 KE, G = 0.09, 0.02
-TV = (133.1 * 1.02 - 0.02 * 1210) / (KE - G)
+TV = 23.1 * 1.02 / (KE - G)
+VD_TV = (133.1 * 1.02 - 0.02 * 1210) / (KE - G)
+VD_EQUITY = 21 / 1.09 + 23.1 / 1.09**2 + VD_TV / 1.09**2
 EQUITY = 21 / 1.09 + 23.1 / 1.09**2 + TV / 1.09**2
 COST = ScenarioConfig(frozenset({ScenarioMode.COST}), 0.01, 0.005)
 
@@ -59,7 +66,8 @@ def bank() -> Company:
         fx_rate_to_eur=1.0,
         fx_date=None,
         company_type=CompanyType.BANK,
-        valuation_model=ValuationModel.FCFE,
+        valuation_model=ValuationModel.FCFE_FIN,
+        terminal_method=TerminalMethod.GORDON,
     )
     balance = BalanceSnapshot(
         balance_date=datetime(2025, 12, 31, tzinfo=UTC),
@@ -84,12 +92,12 @@ def _value(
     market: MarketInputs,
     g: float = G,
     scenario_config: ScenarioConfig | None = None,
-) -> FcfeValuationResult:
+) -> FcfeFinValuationResult:
     return value_company(bank, market, Assumptions(g, projection_years=2), NOW, scenario_config)
 
 
 def test_ratios(bank: Company) -> None:
-    r = compute_fcfe_ratios(bank)
+    r = compute_fcfe_fin_ratios(bank)
     assert r.average_revenue_growth == pytest.approx(0.10, rel=REL)
     assert r.average_net_margin == pytest.approx(0.10, rel=REL)
     assert r.last_equity == 1000.0
@@ -97,23 +105,22 @@ def test_ratios(bank: Company) -> None:
 
 
 def test_proyeccion_calculada_a_mano(bank: Company) -> None:
-    flows = project_fcfe(bank, compute_fcfe_ratios(bank), 2).flows
+    flows = project_fcfe_fin(bank, compute_fcfe_fin_ratios(bank), 2).flows
     assert [f.fiscal_year for f in flows] == [2026, 2027]
     assert [f.net_income for f in flows] == pytest.approx([121.0, 133.1], rel=REL)
     assert [f.equity_reinvestment for f in flows] == pytest.approx([100.0, 110.0], rel=REL)
     assert [f.fcfe for f in flows] == pytest.approx([21.0, 23.1], rel=REL)
     assert [f.equity_end for f in flows] == pytest.approx([1100.0, 1210.0], rel=REL)
     assert flows[0].implied_roe == pytest.approx(0.121, rel=REL)
-    assert terminal_fcfe(flows[-1], G) == pytest.approx(111.562, rel=REL)
 
 
 def test_caso_referencia(bank: Company, market_inputs: MarketInputs) -> None:
     r = _value(bank, market_inputs)
     assert r.cost_of_equity.cost_of_equity == pytest.approx(KE, rel=REL)
-    assert r.terminal_fcfe == pytest.approx(111.562, rel=REL)
+    assert r.terminal_fcfe_fin == pytest.approx(23.1 * 1.02, rel=REL)
     assert r.terminal_value == pytest.approx(TV, rel=REL)
     assert r.equity_value == pytest.approx(EQUITY, rel=REL)
-    assert r.equity_value == pytest.approx(1380.1305, rel=1e-6)
+    assert r.equity_value == pytest.approx(322.0183, rel=1e-6)
     assert r.value_per_share == pytest.approx(EQUITY / 100, rel=REL)
     assert r.terminal_value_weight == pytest.approx((TV / 1.09**2) / EQUITY, rel=REL)
     assert r.sensitivity.loc[KE, G] == pytest.approx(r.value_per_share, rel=REL)
@@ -133,7 +140,7 @@ def test_escenarios_coste_desplazan_ke(bank: Company, market_inputs: MarketInput
     assert bear.discount_rate == pytest.approx(0.10, rel=REL)
     assert bear.terminal_growth == pytest.approx(0.015, rel=REL)
     assert neutral.value_per_share == pytest.approx(EQUITY / 100, rel=REL)
-    bear_tv = (133.1 * 1.015 - 0.015 * 1210) / (0.10 - 0.015)
+    bear_tv = 23.1 * 1.015 / (0.10 - 0.015)
     bear_equity = 21 / 1.10 + 23.1 / 1.10**2 + bear_tv / 1.10**2
     assert bear.value_per_share == pytest.approx(bear_equity / 100, rel=REL)
     # Alcista: g = 2,5 % < rf = 3 %, Ke = 8 %.
@@ -176,7 +183,7 @@ def test_run_valuation_elige_el_modelo(
     bank: Company, company: Company, market_inputs: MarketInputs
 ) -> None:
     a = Assumptions(G, projection_years=2)
-    assert isinstance(run_valuation(bank, market_inputs, a, NOW), FcfeValuationResult)
+    assert isinstance(run_valuation(bank, market_inputs, a, NOW), FcfeFinValuationResult)
     assert isinstance(run_valuation(company, market_inputs, a, NOW), FcffCfoValuationResult)
 
 
@@ -193,7 +200,7 @@ def test_fcff_sobre_un_banco_falla_con_dato_ausente(
 def test_informe_fcfe(bank: Company, market_inputs: MarketInputs) -> None:
     md = render_report(bank, _value(bank, market_inputs, scenario_config=COST), scale=1.0, unit="€")
     for title in (
-        "# Valoración DCF (FCFE): Banco Sintético S.A. (BANK)",
+        "# Valoración DCF (FCFE_FIN): Banco Sintético S.A. (BANK)",
         "## 2. Coste de los fondos propios (Ke)",
         "## 3. Históricos y proyecciones",
         "### 4.1 Del FCFE al valor por acción",
@@ -202,7 +209,22 @@ def test_informe_fcfe(bank: Company, market_inputs: MarketInputs) -> None:
     ):
         assert title in md
     assert "**9,00 %**" in md  # Ke
-    assert "**13,80 €**" in md  # valor por acción del caso de referencia
-    assert "| Modelo de valoración | fcfe |" in md
+    assert "**3,22 €**" in md  # valor por acción del caso de referencia
+    assert "| Modelo de valoración | fcfe_fin |" in md
     assert "WACC \\ g" not in md and "Coste de la deuda (Kd)" not in md
     assert "Aviso de modelo" not in md  # FCFE es adecuado para un banco
+
+
+def test_value_driver_con_roe_reproduce_el_vt_anterior(
+    bank: Company, market_inputs: MarketInputs
+) -> None:
+    # El VT anterior (NI_N·(1+g) − g·FP_N) es un value driver con ROE = NI_{N+1} / FP_N.
+
+    from dcf.model.cost_of_equity import MarketRate
+
+    roe = MarketRate(133.1 * 1.02 / 1210, "prueba", NOW)
+    options = TerminalOptions(TerminalMethod.VALUE_DRIVER, ronic=roe)
+    r = value_company(bank, market_inputs, Assumptions(G, 2), NOW, None, None, options)
+    assert r.terminal_value == pytest.approx(VD_TV, rel=REL)
+    assert r.equity_value == pytest.approx(VD_EQUITY, rel=REL)
+    assert r.value_per_share == pytest.approx(13.801305, rel=1e-6)

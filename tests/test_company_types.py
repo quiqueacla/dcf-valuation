@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from dcf.company import CompanyType, ValuationModel, model_suitability_warning
+from dcf.company import CompanyType, TerminalMethod, ValuationModel, model_suitability_warning
 from dcf.data.company_types import (
     CompanyTypeRules,
     classify_company,
@@ -105,23 +105,28 @@ def test_build_company_banco(rules: CompanyTypeRules) -> None:
     }
     c = build_company(dataclasses.replace(raw, info=info), type_rules=rules)
     assert c.info.company_type is CompanyType.BANK
-    assert c.info.valuation_model is ValuationModel.FCFE
+    assert c.info.valuation_model is ValuationModel.FCFE_FIN
     assert c.debt_cost_data == ()  # FCFE no usa coste de la deuda
     assert c.historicals[-1].stockholders_equity == pytest.approx(610.0 * 0.9)
 
 
 def test_tabla_del_repo_asigna_modelos(rules: CompanyTypeRules) -> None:
-    assert rules.model_for(CompanyType.BANK) is ValuationModel.FCFE
-    assert rules.model_for(CompanyType.INSURANCE) is ValuationModel.FCFE
-    assert rules.model_for(CompanyType.REAL_ESTATE) is ValuationModel.FCFF_CFO
-    assert rules.model_for(CompanyType.INDUSTRIAL) is ValuationModel.FCFF_CFO
-    assert rules.model_for(None) is ValuationModel.FCFF_CFO
+    assert rules.model_for(CompanyType.BANK) is ValuationModel.FCFE_FIN
+    assert rules.model_for(CompanyType.INSURANCE) is ValuationModel.FCFE_FIN
+    assert rules.model_for(CompanyType.REAL_ESTATE) is ValuationModel.FCFF
+    assert rules.model_for(CompanyType.INDUSTRIAL) is ValuationModel.FCFF
+    assert rules.model_for(None) is ValuationModel.FCFF
+    assert rules.terminal_for(CompanyType.BANK) is TerminalMethod.GORDON
+    assert rules.terminal_for(CompanyType.INSURANCE) is TerminalMethod.GORDON
+    assert rules.terminal_for(CompanyType.INDUSTRIAL) is TerminalMethod.VALUE_DRIVER
+    assert rules.terminal_for(CompanyType.REAL_ESTATE) is TerminalMethod.VALUE_DRIVER
+    assert rules.terminal_for(None) is TerminalMethod.VALUE_DRIVER
 
 
 def test_modelo_forzado_prevalece_sobre_la_tabla(rules: CompanyTypeRules) -> None:
-    c = build_company(_raw(), type_rules=rules, model=ValuationModel.FCFE)
+    c = build_company(_raw(), type_rules=rules, model=ValuationModel.FCFE_FIN)
     assert c.info.company_type is CompanyType.INDUSTRIAL
-    assert c.info.valuation_model is ValuationModel.FCFE
+    assert c.info.valuation_model is ValuationModel.FCFE_FIN
 
 
 def test_modelo_invalido_en_la_tabla(tmp_path: Path) -> None:
@@ -148,8 +153,8 @@ def test_build_company_sin_tabla_no_clasifica() -> None:
     ("kind", "model"),
     [
         (CompanyType.INDUSTRIAL, ValuationModel.FCFF_CFO),
-        (CompanyType.BANK, ValuationModel.FCFE),
-        (CompanyType.INSURANCE, ValuationModel.FCFE),
+        (CompanyType.BANK, ValuationModel.FCFE_FIN),
+        (CompanyType.INSURANCE, ValuationModel.FCFE_FIN),
     ],
 )
 def test_sin_aviso_si_el_modelo_es_adecuado(kind: CompanyType, model: ValuationModel) -> None:
@@ -161,9 +166,9 @@ def test_sin_aviso_si_el_modelo_es_adecuado(kind: CompanyType, model: ValuationM
     [
         (CompanyType.BANK, ValuationModel.FCFF_CFO, "usa el modelo fcfe"),
         (CompanyType.INSURANCE, ValuationModel.FCFF_CFO, "usa el modelo fcfe"),
-        (CompanyType.INDUSTRIAL, ValuationModel.FCFE, "FCFF recoge"),
+        (CompanyType.INDUSTRIAL, ValuationModel.FCFE_FIN, "usa fcff o fcfe"),
         (CompanyType.REAL_ESTATE, ValuationModel.FCFF_CFO, "NAV"),
-        (CompanyType.REAL_ESTATE, ValuationModel.FCFE, "NAV"),
+        (CompanyType.REAL_ESTATE, ValuationModel.FCFE_FIN, "NAV"),
     ],
 )
 def test_aviso_si_el_modelo_no_es_adecuado(
@@ -192,7 +197,7 @@ def test_banco_sin_ebit_se_carga_con_fcfe(rules: CompanyTypeRules) -> None:
     c = build_company(
         dataclasses.replace(raw, income_stmt=income, balance_sheet=balance), type_rules=rules
     )
-    assert c.info.valuation_model is ValuationModel.FCFE
+    assert c.info.valuation_model is ValuationModel.FCFE_FIN
     assert c.balance.cash is None
 
 

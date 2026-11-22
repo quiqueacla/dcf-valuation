@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,11 +31,17 @@ from dcf.company import (
     DebtCostYear,
     HistoricalYear,
     RevenueEstimate,
+    TerminalMethod,
     ValuationModel,
     model_suitability_warning,
 )
 from dcf.data.company_types import CompanyTypeRules, classify_company
-from dcf.defaults import ANALYST_ESTIMATE_YEARS, DEFAULT_VALUATION_MODEL, HISTORICAL_YEARS
+from dcf.defaults import (
+    ANALYST_ESTIMATE_YEARS,
+    DEFAULT_TERMINAL_METHOD,
+    DEFAULT_VALUATION_MODEL,
+    HISTORICAL_YEARS,
+)
 from dcf.model.cost_of_equity import MarketRate
 
 SOURCE = "yahoo_finance"
@@ -59,6 +66,12 @@ ROW_TOTAL_DEBT = "Total Debt"
 ROW_CASH = "Cash Cash Equivalents And Short Term Investments"
 ROW_MINORITY = "Minority Interest"
 ROW_EQUITY = "Stockholders Equity"
+ROW_INVENTORY = "Inventory"
+# Alternativas por orden de preferencia: Yahoo no usa siempre el mismo nombre de fila.
+ROWS_DA_CASHFLOW = ("Depreciation And Amortization", "Depreciation Amortization Depletion")
+ROWS_DA_INCOME = ("Reconciled Depreciation",)
+ROWS_RECEIVABLES = ("Accounts Receivable", "Receivables")
+ROWS_PAYABLES = ("Accounts Payable",)
 
 # Periodos de revenue_estimate: ejercicio en curso (+1) y siguiente (+2).
 ESTIMATE_PERIODS = ("0y", "+1y")
@@ -372,7 +385,7 @@ def _classification(
     return sector, industry, company_type
 
 
-# Modelo de valoración: el forzado, el de la tabla de tipos o, en su defecto, el FCFF.
+# Modelo de valoración: el forzado, el de la tabla de tipos o, en su defecto, el fcff.
 def _choose_model(
     company_type: CompanyType | None,
     rules: CompanyTypeRules | None,
@@ -385,6 +398,56 @@ def _choose_model(
     return ValuationModel(DEFAULT_VALUATION_MODEL)
 
 
+# Método de VT: el forzado, el de la tabla de tipos o, en su defecto, gordon_value_driver.
+def _choose_terminal(
+    company_type: CompanyType | None,
+    rules: CompanyTypeRules | None,
+    terminal: TerminalMethod | None,
+) -> TerminalMethod:
+    if terminal is not None:
+        return terminal
+    if rules is not None:
+        return rules.terminal_for(company_type)
+    return TerminalMethod(DEFAULT_TERMINAL_METHOD)
+
+
+# Primera fila disponible de una lista de alternativas (Yahoo cambia nombres entre empresas).
+def _first_cell(df: pd.DataFrame, rows: Sequence[str], column: pd.Timestamp) -> float | None:
+    for row in rows:
+        value = _cell(df, row, column)
+        if value is not None:
+            return value
+    return None
+
+
+# Caja, D&A y circulante comercial; D&A, clientes y proveedores obligatorios si se piden.
+def _operating_items(
+    raw: YahooRawData, column: pd.Timestamp, fx: float, required: bool, warnings: list[str]
+) -> dict[str, float | None]:
+    items = {
+        "depreciation_amortization": (raw.cashflow, CASHFLOW, ROWS_DA_CASHFLOW, raw.income_stmt),
+        "receivables": (raw.balance_sheet, BALANCE, ROWS_RECEIVABLES, None),
+        "payables": (raw.balance_sheet, BALANCE, ROWS_PAYABLES, None),
+    }
+    result: dict[str, float | None] = {"cash": _optional(raw.balance_sheet, ROW_CASH, column, fx)}
+    for name, (df, statement, rows, fallback) in items.items():
+        value = _first_cell(df, rows, column)
+        if value is None and fallback is not None:
+            value = _first_cell(fallback, ROWS_DA_INCOME, column)
+        if value is None and required:
+            raise ValueError(
+                f"Yahoo: falta {' / '.join(rows)} en {statement} para el cierre {column.date()} "
+                "(necesario para los modelos fcff y fcfe; prueba --model fcff_cfo)"
+            )
+        result[name] = None if value is None else abs(value) * fx
+    inventory = _cell(raw.balance_sheet, ROW_INVENTORY, column)
+    if inventory is None and required:
+        warnings.append(f"'{ROW_INVENTORY}' ausente en {BALANCE} ({column.date()}): se usa 0")
+        inventory = 0.0
+    result["inventory"] = None if inventory is None else abs(inventory) * fx
+    return result
+
+
 # Valida los datos crudos y construye Company con todos los importes en EUR.
 def build_company(
     raw: YahooRawData,
@@ -392,12 +455,14 @@ def build_company(
     historical_years: int = HISTORICAL_YEARS,
     type_rules: CompanyTypeRules | None = None,
     model: ValuationModel | None = None,
+    terminal: TerminalMethod | None = None,
 ) -> Company:
     """Construye la compañía a partir de la respuesta cruda de Yahoo.
 
-    Los datos obligatorios dependen del modelo: el FCFF exige flujos de caja, deuda,
-    caja, EBIT, BAI e impuestos; el FCFE exige los fondos propios (Stockholders Equity)
-    y deja el resto como opcional (``None`` si Yahoo no lo publica).
+    Los datos obligatorios dependen del modelo: fcff, fcff_cfo y fcfe exigen deuda,
+    caja, EBIT, BAI, impuestos, intereses y Capex; además fcff y fcfe exigen D&A,
+    clientes y proveedores (existencias 0 con aviso) y fcff_cfo el CFO. fcfe_fin exige
+    los fondos propios (Stockholders Equity). El resto se carga si está (``None`` si no).
 
     Args:
         raw: Datos crudos (descargados o leídos de la caché).
@@ -411,6 +476,8 @@ def build_company(
             = no se clasifica (``company_type`` queda en ``None``).
         model: Modelo forzado; ``None`` = el de la tabla para el tipo de empresa (o
             fcff sin tabla).
+        terminal: Método de VT forzado; ``None`` = el de la tabla (o
+            gordon_value_driver sin tabla).
 
     Returns:
         Compañía con importes en EUR y avisos de carga en ``info.data_warnings``.
@@ -423,9 +490,10 @@ def build_company(
     warnings: list[str] = []
     classification = _classification(raw.info, type_rules, warnings)
     chosen = _choose_model(classification[2], type_rules, model)
+    method = _choose_terminal(classification[2], type_rules, terminal)
     try:
         return _build_company(
-            raw, default_cost_of_debt, historical_years, classification, chosen, warnings
+            raw, default_cost_of_debt, historical_years, classification, chosen, method, warnings
         )
     except ValueError as exc:
         company_type = classification[2]
@@ -452,6 +520,7 @@ def _build_company(
     historical_years: int,
     classification: tuple[str | None, str | None, CompanyType | None],
     model: ValuationModel,
+    terminal: TerminalMethod,
     warnings: list[str],
 ) -> Company:
     financial_currency = str(_info_value(raw.info, "financialCurrency", str))
@@ -463,7 +532,8 @@ def _build_company(
 
     columns = _select_columns(raw, historical_years, warnings)
     inc, cf, bs = raw.income_stmt, raw.cashflow, raw.balance_sheet
-    fcff = model is ValuationModel.FCFF_CFO
+    fcff = model is not ValuationModel.FCFE_FIN
+    operating = model in (ValuationModel.FCFF, ValuationModel.FCFE)
 
     historicals: list[HistoricalYear] = []
     debt_cost: list[DebtCostYear] = []
@@ -477,7 +547,11 @@ def _build_company(
                 fiscal_year=col.year,
                 revenue=revenue,
                 net_income=net_income,
-                operating_cash_flow=_required(cf, CASHFLOW, ROW_CFO, col) * fx,
+                operating_cash_flow=(
+                    _required(cf, CASHFLOW, ROW_CFO, col) * fx
+                    if model is ValuationModel.FCFF_CFO
+                    else _optional(cf, ROW_CFO, col, fx)
+                ),
                 capital_expenditure=abs(_required(cf, CASHFLOW, ROW_CAPEX, col)) * fx,
                 interest_expense=interest,
                 debt_issuance=abs(_zero_if_missing(cf, CASHFLOW, ROW_DEBT_ISSUANCE, col, warnings))
@@ -487,6 +561,7 @@ def _build_company(
                 )
                 * fx,
                 stockholders_equity=_optional(bs, ROW_EQUITY, col, fx),
+                **_operating_items(raw, col, fx, operating, warnings),
             )
             debt_cost.append(
                 DebtCostYear(
@@ -509,6 +584,7 @@ def _build_company(
                 debt_issuance=_optional(cf, ROW_DEBT_ISSUANCE, col, fx, absolute=True),
                 debt_repayment=_optional(cf, ROW_DEBT_REPAYMENT, col, fx, absolute=True),
                 stockholders_equity=_required(bs, BALANCE, ROW_EQUITY, col) * fx,
+                **_operating_items(raw, col, fx, False, warnings),
             )
         historicals.append(year)
 
@@ -557,6 +633,7 @@ def _build_company(
         industry=industry,
         company_type=company_type,
         valuation_model=model,
+        terminal_method=terminal,
     )
     return Company(
         info=info,
@@ -574,6 +651,7 @@ def fetch_company(
     cache_dir: Path = DEFAULT_CACHE_DIR,
     type_rules: CompanyTypeRules | None = None,
     model: ValuationModel | None = None,
+    terminal: TerminalMethod | None = None,
 ) -> Company:  # pragma: no cover - requiere red
     """Descarga un ticker de Yahoo, guarda la respuesta en caché y construye ``Company``.
 
@@ -583,10 +661,13 @@ def fetch_company(
         cache_dir: Carpeta raíz de la caché.
         type_rules: Tabla de tipos de empresa (ver ``build_company``).
         model: Modelo forzado; ``None`` = el de la tabla (ver ``build_company``).
+        terminal: Método de VT forzado; ``None`` = el de la tabla.
 
     Returns:
         Compañía con importes en EUR.
     """
     raw = fetch_yahoo(ticker)
     save_raw(raw, cache_dir)
-    return build_company(raw, default_cost_of_debt, type_rules=type_rules, model=model)
+    return build_company(
+        raw, default_cost_of_debt, type_rules=type_rules, model=model, terminal=terminal
+    )

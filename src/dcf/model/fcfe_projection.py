@@ -1,8 +1,8 @@
-"""Modelo FCFE (financieras): ratios, fondos propios y FCFE proyectado. Puro, sin I/O.
+"""Modelo FCFE (1.2, industriales): FCFE = FCFF − Int·(1−t) + ΔDeuda neta. Puro, sin I/O.
 
-FCFE_t = Net Income_t − g_t · FP_{t−1}: la financiera retiene el beneficio necesario
-para que sus fondos propios (capital regulatorio) crezcan al ritmo del negocio y el
-resto queda disponible para el accionista. Fórmulas en ``docs/metodologia.md`` §3 y §5.
+Parte de la proyección del modelo fcff (EBIT, D&A, Capex, circulante) y modela la deuda
+con apalancamiento constante: la deuda neta financia la parte D/(D+E) de la reinversión
+neta. Fórmulas en ``docs/metodologia.md`` §13 (``docs/dcf_metodos.md`` §1.2).
 Tasas en decimal (0.08 = 8 %), importes en EUR.
 """
 
@@ -13,40 +13,28 @@ from dataclasses import dataclass
 import numpy as np
 
 from dcf.company import Company, ValuationModel, required
-from dcf.model.revenue_projection import (
-    EstimateCase,
-    RevenueSource,
-    net_margin_by_year,
-    project_revenue,
-    revenue_growth_by_year,
-)
+from dcf.model.fcff_projection import FcffFlow, FcffRatios, project_fcff
+from dcf.model.revenue_projection import EstimateCase
 
 FCFE = ValuationModel.FCFE
 
 
 @dataclass(frozen=True, slots=True)
-class FcfeRatios:
-    """Ratios históricos del modelo FCFE.
+class FcfeLeverage:
+    """Supuestos de deuda del modelo FCFE.
 
     Attributes:
-        revenue_growth_by_year: Crecimiento de ventas de cada ejercicio respecto al anterior.
-        net_margin_by_year: Margen neto (Net Income / ventas), incluye años con pérdidas.
-        equity_by_year: Fondos propios contables al cierre de cada ejercicio.
-        return_on_equity_by_year: Rentabilidad de los fondos propios (ROE) de cada
-            ejercicio: Net Income / fondos propios al inicio (cierre del anterior).
-            Informativo: el modelo no lo usa para proyectar.
-        average_revenue_growth: Media de los crecimientos históricos.
-        average_net_margin: Media de los márgenes netos.
-        last_equity: Fondos propios al cierre del último ejercicio (FP_0).
+        cost_of_debt: Kd medio histórico (intereses / deuda total), antes de impuestos.
+        debt_ratio: D / (D + E) con D contable y E de mercado: parte de la reinversión
+            neta que se financia con deuda (apalancamiento constante).
+        net_debt_0: Deuda neta al cierre del último ejercicio (deuda total − caja).
+        tax_rate: Tipo impositivo (mediana) para el ahorro fiscal de los intereses.
     """
 
-    revenue_growth_by_year: dict[int, float]
-    net_margin_by_year: dict[int, float]
-    equity_by_year: dict[int, float]
-    return_on_equity_by_year: dict[int, float]
-    average_revenue_growth: float
-    average_net_margin: float
-    last_equity: float
+    cost_of_debt: float
+    debt_ratio: float
+    net_debt_0: float
+    tax_rate: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,29 +42,30 @@ class FcfeFlow:
     """Un año proyectado del modelo FCFE, antes de descontar.
 
     Attributes:
-        fiscal_year: Ejercicio proyectado.
-        revenue: Ventas proyectadas.
-        revenue_growth: Crecimiento de ventas respecto al año anterior (g_t).
-        revenue_source: Si las ventas vienen de analistas o del crecimiento medio.
-        net_income: Beneficio neto proyectado (ventas × margen neto medio).
-        equity_begin: Fondos propios al inicio del año (FP_{t−1}).
-        equity_reinvestment: Beneficio retenido para que los fondos propios crezcan al
-            ritmo de las ventas: g_t · FP_{t−1}.
-        fcfe: Flujo de caja libre para el accionista: Net Income − reinversión.
-        equity_end: Fondos propios al cierre: FP_{t−1} · (1 + g_t).
-        implied_roe: ROE implícito en la proyección: Net Income / FP_{t−1}.
+        operating: Año FCFF del que parte (ventas, EBIT, NOPAT, D&A, Capex, ΔNWC, FCFF).
+        net_debt_begin: Deuda neta al inicio del año.
+        interest: Intereses del año: Kd × deuda neta inicial (negativo si hay caja neta).
+        reinvestment: Reinversión neta: Capex − D&A + ΔNWC.
+        net_debt_change: Variación de la deuda neta: D/(D+E) × reinversión neta.
+        net_income: Beneficio neto: (EBIT − intereses) · (1 − t).
+        fcfe: Flujo para el accionista: FCFF − intereses · (1 − t) + ΔDeuda neta.
+        net_debt_end: Deuda neta al cierre.
     """
 
-    fiscal_year: int
-    revenue: float
-    revenue_growth: float
-    revenue_source: RevenueSource
+    operating: FcffFlow
+    net_debt_begin: float
+    interest: float
+    reinvestment: float
+    net_debt_change: float
     net_income: float
-    equity_begin: float
-    equity_reinvestment: float
     fcfe: float
-    equity_end: float
-    implied_roe: float
+    net_debt_end: float
+
+    # Ejercicio proyectado.
+    @property
+    def fiscal_year(self) -> int:
+        """Ejercicio proyectado."""
+        return self.operating.fiscal_year
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +74,7 @@ class FcfeProjection:
 
     Attributes:
         flows: Años proyectados, en orden.
-        projection_growth: Crecimiento aplicado a los años sin estimación de analistas.
+        projection_growth: Crecimiento de ventas aplicado sin estimación de analistas.
         warnings: Avisos de la proyección.
     """
 
@@ -94,115 +83,108 @@ class FcfeProjection:
     warnings: tuple[str, ...] = ()
 
 
-# Ratios FCFE: crecimiento, margen, fondos propios y ROE histórico.
-def compute_fcfe_ratios(company: Company) -> FcfeRatios:
-    """Calcula los ratios históricos del modelo FCFE.
+# Kd medio, D/(D+E) con E de mercado y deuda neta inicial.
+def leverage_inputs(company: Company, tax_rate: float) -> FcfeLeverage:
+    """Calcula los supuestos de deuda del modelo FCFE.
 
     Args:
-        company: Compañía con ventas, Net Income y fondos propios de cada ejercicio.
+        company: Compañía con deuda e intereses históricos, balance y cotización.
+        tax_rate: Tipo impositivo (mediana) en decimal.
 
     Returns:
-        Ratios por ejercicio y medias.
+        Kd, D/(D+E), deuda neta inicial y t.
 
     Raises:
-        ValueError: Si falta algún dato de fondos propios o los del último ejercicio
-            no son positivos.
+        ValueError: Si falta la deuda total o la caja del último balance, o la empresa
+            tiene deuda pero ningún año permite calcular Kd.
     """
-    equity = {
-        h.fiscal_year: required(
-            h.stockholders_equity, f"los fondos propios de {h.fiscal_year}", FCFE
-        )
-        for h in company.historicals
-    }
-    last_equity = equity[company.last_fiscal_year]
-    if last_equity <= 0:
-        raise ValueError(
-            f"Los fondos propios del último ejercicio deben ser positivos para el modelo "
-            f"fcfe, recibido {last_equity:,.0f} EUR"
-        )
-    roe = {
-        curr.fiscal_year: curr.net_income / equity[prev.fiscal_year]
-        for prev, curr in zip(company.historicals, company.historicals[1:], strict=False)
-        if equity[prev.fiscal_year] > 0
-    }
-    growth = revenue_growth_by_year(company.historicals)
-    margin = net_margin_by_year(company.historicals)
-    return FcfeRatios(
-        revenue_growth_by_year=growth,
-        net_margin_by_year=margin,
-        equity_by_year=equity,
-        return_on_equity_by_year=roe,
-        average_revenue_growth=float(np.mean(list(growth.values()))),
-        average_net_margin=float(np.mean(list(margin.values()))),
-        last_equity=last_equity,
+    balance = company.balance
+    debt = required(balance.total_debt, "la deuda total", FCFE)
+    cash = required(balance.cash, "la caja", FCFE)
+    kd_years = [
+        d.interest_expense / d.total_debt for d in company.debt_cost_data if d.total_debt > 0
+    ]
+    if debt > 0 and not kd_years:
+        raise ValueError("La empresa tiene deuda pero ningún ejercicio permite calcular Kd")
+    equity = balance.share_price * balance.diluted_shares
+    return FcfeLeverage(
+        cost_of_debt=float(np.mean(kd_years)) if kd_years else 0.0,
+        debt_ratio=debt / (debt + equity),
+        net_debt_0=debt - cash,
+        tax_rate=tax_rate,
     )
 
 
-# FCFE_t = NI_t − g_t · FP_{t−1}; FP_t = FP_{t−1} · (1 + g_t).
+# FCFE_t = FCFF_t − Kd·DN_{t−1}·(1−t) + D/(D+E)·(Capex − D&A + ΔNWC).
 def project_fcfe(
     company: Company,
-    ratios: FcfeRatios,
+    ratios: FcffRatios,
+    leverage: FcfeLeverage,
     projection_years: int,
     estimate_case: EstimateCase = EstimateCase.AVERAGE,
 ) -> FcfeProjection:
-    """Proyecta los FCFE del horizonte explícito.
-
-    Ventas y Net Income como en FCFF (:func:`project_revenue`). Los fondos propios
-    crecen al ritmo de las ventas y ese crecimiento se financia con beneficio retenido.
+    """Proyecta los FCFE del horizonte explícito desde la proyección FCFF.
 
     Args:
         company: Compañía con históricos y, opcionalmente, estimaciones de ventas.
-        ratios: Ratios FCFE (ver :func:`compute_fcfe_ratios`).
+        ratios: Ratios FCFF (márgenes, t y circulante).
+        leverage: Supuestos de deuda.
         projection_years: Número de años a proyectar (≥ 1).
         estimate_case: Estimación de analistas a usar (baja, media o alta).
 
     Returns:
-        Flujos FCFE proyectados, crecimiento medio aplicado y avisos.
-
-    Raises:
-        ValueError: Si ``projection_years`` < 1.
+        FCFE proyectados, crecimiento medio aplicado y avisos.
     """
-    revenue = project_revenue(
-        company,
-        list(ratios.revenue_growth_by_year.values()),
-        ratios.average_net_margin,
-        projection_years,
-        estimate_case,
-    )
+    operating = project_fcff(company, ratios, projection_years, estimate_case)
+    t = leverage.tax_rate
+    net_debt = leverage.net_debt_0
     flows: list[FcfeFlow] = []
-    equity = ratios.last_equity
-    for y in revenue.years:
-        reinvestment = y.revenue_growth * equity
+    for f in operating.flows:
+        interest = leverage.cost_of_debt * net_debt
+        reinvestment = f.capital_expenditure - f.depreciation_amortization + f.nwc_change
+        change = leverage.debt_ratio * reinvestment
         flows.append(
             FcfeFlow(
-                fiscal_year=y.fiscal_year,
-                revenue=y.revenue,
-                revenue_growth=y.revenue_growth,
-                revenue_source=y.revenue_source,
-                net_income=y.net_income,
-                equity_begin=equity,
-                equity_reinvestment=reinvestment,
-                fcfe=y.net_income - reinvestment,
-                equity_end=equity + reinvestment,
-                implied_roe=y.net_income / equity,
+                operating=f,
+                net_debt_begin=net_debt,
+                interest=interest,
+                reinvestment=reinvestment,
+                net_debt_change=change,
+                net_income=(f.ebit - interest) * (1.0 - t),
+                fcfe=f.fcff - interest * (1.0 - t) + change,
+                net_debt_end=net_debt + change,
             )
         )
-        equity += reinvestment
-    return FcfeProjection(
-        flows=tuple(flows), projection_growth=revenue.projection_growth, warnings=revenue.warnings
-    )
+        net_debt += change
+    return FcfeProjection(tuple(flows), operating.projection_growth, operating.warnings)
 
 
-# FCFE del año N+1 en el valor terminal: NI_N · (1 + g) − g · FP_N.
-def terminal_fcfe(last: FcfeFlow, terminal_growth: float) -> float:
-    """Calcula el FCFE del primer año tras el horizonte.
+# FCFE histórico: FCFF_i − Int_i·(1−t) + (DN_i − DN_{i−1}), con DN = deuda total − caja.
+def historical_fcfe(company: Company, ratios: FcffRatios) -> dict[int, float]:
+    """Calcula el FCFE histórico con el mismo criterio que la proyección.
 
     Args:
-        last: Último año proyectado.
-        terminal_growth: g terminal en decimal.
+        company: Compañía con deuda, intereses y caja de cada ejercicio.
+        ratios: Ratios FCFF (FCFF histórico y t).
 
     Returns:
-        FCFE del año N+1 en EUR: el Net Income crece a g y solo se retiene lo necesario
-        para que los fondos propios crezcan a g.
+        FCFE por ejercicio desde el segundo; se omiten los años sin caja publicada.
     """
-    return last.net_income * (1.0 + terminal_growth) - terminal_growth * last.equity_end
+    debt = {d.fiscal_year: d for d in company.debt_cost_data}
+    net_debt = {
+        h.fiscal_year: debt[h.fiscal_year].total_debt - h.cash
+        for h in company.historicals
+        if h.cash is not None and h.fiscal_year in debt
+    }
+    result: dict[int, float] = {}
+    for prev, curr in zip(company.historicals, company.historicals[1:], strict=False):
+        y = curr.fiscal_year
+        if y not in ratios.fcff_by_year or y not in net_debt or prev.fiscal_year not in net_debt:
+            continue
+        result[y] = (
+            ratios.fcff_by_year[y]
+            - debt[y].interest_expense * (1.0 - ratios.tax_rate)
+            + net_debt[y]
+            - net_debt[prev.fiscal_year]
+        )
+    return result

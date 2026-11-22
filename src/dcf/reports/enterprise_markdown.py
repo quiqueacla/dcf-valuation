@@ -1,4 +1,4 @@
-"""Secciones del informe FCFF (fcff_cfo): WACC y puente a fondos propios.
+"""Secciones comunes de los informes FCFF (fcff, fcff_cfo): WACC y puente al equity.
 
 Funciones puras: devuelven texto. Formato en :mod:`dcf.reports.format`.
 """
@@ -8,7 +8,9 @@ from __future__ import annotations
 from dcf.company import Company
 from dcf.model.cost_of_equity import CostOfEquityResult
 from dcf.reports.format import (
+    TERMINAL_LABEL,
     amount,
+    checks_block,
     cost_of_equity_rows,
     discount_rate_note,
     eur,
@@ -17,13 +19,15 @@ from dcf.reports.format import (
     scenarios_block,
     sensitivity_block,
     table,
+    terminal_block,
     vs_price,
     warnings_block,
 )
 from dcf.valuation.fcff_cfo_result import FcffCfoValuationResult
+from dcf.valuation.fcff_result import FcffValuationResult
 
-AnyFcffResult = FcffCfoValuationResult
-"""Resultado del modelo FCFF (fcff_cfo)."""
+AnyFcffResult = FcffValuationResult | FcffCfoValuationResult
+"""Resultado de cualquiera de los dos modelos FCFF."""
 
 
 # Sección 2: Ke por CAPM, Kd y t por año, pesos y WACC.
@@ -118,16 +122,10 @@ def value_section(company: Company, result: AnyFcffResult, scale: float, unit: s
     """
     b, price = company.balance, company.balance.share_price
     pv_flows = sum(p.present_value for p in result.projections)
-    g = pct(result.assumptions.terminal_growth)
-    terminal = [
-        [
-            f"Valor terminal (Gordon, g = {g}) = FCFF_N · (1 + g) / (WACC − g) ({unit})",
-            amount(result.terminal_value, scale),
-        ]
-    ]
+    method = "" if result.terminal is None else f", {TERMINAL_LABEL[result.terminal.method.value]}"
     bridge = [
         [f"Valor actual de los FCFF ({unit})", amount(pv_flows, scale)],
-        *terminal,
+        [f"Valor terminal{method} ({unit})", amount(result.terminal_value, scale)],
         [f"Valor actual del valor terminal ({unit})", amount(result.terminal_value_present, scale)],
         ["Peso del valor terminal sobre el VE", pct(result.terminal_value_weight)],
         [f"**Valor de empresa (VE)** ({unit})", f"**{amount(result.enterprise_value, scale)}**"],
@@ -145,6 +143,8 @@ def value_section(company: Company, result: AnyFcffResult, scale: float, unit: s
         "### 4.1 Del valor de empresa al valor por acción\n\n"
         + table(["Concepto", "Valor"], bridge)
         + "\n"
+        + terminal_block(result.terminal, "WACC", result.assumptions.terminal_growth, scale, unit)
+        + checks_block(result.checks)
         + scenarios_block(result.scenarios, "WACC", "VE", price, scale, unit)
         + sensitivity_block(result.sensitivity, "WACC")
     )

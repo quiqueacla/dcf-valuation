@@ -3,20 +3,37 @@
 Documento de referencia de las fórmulas del modelo. Se actualiza con cada cambio de fórmula.
 Tasas en decimal (0.08 = 8 %). Importes en EUR, en unidades (no millones).
 
-Hay dos modelos de valoración. El modelo se elige por tipo de empresa en
-`config/company_types.toml` (clave `model`) o se fuerza con `dcf --model`:
+Hay cuatro modelos de flujo y tres métodos de valor terminal (VT), combinables. El modelo
+y el VT se eligen por tipo de empresa en `config/company_types.toml` (claves `model` y `vt`,
+con `[default]` para industriales) y se fuerzan con `dcf --model` y `dcf --vt`. Las fórmulas
+de partida están en `docs/dcf_metodos.md`.
 
 | Modelo | Para | Flujo | Tasa | Secciones |
 |---|---|---|---|---|
-| `fcff_cfo` | Industriales (por defecto) | FCFF desde el CFO: Net Income × FCFF/Net Income | WACC | §1-§9 |
-| `fcfe` | Bancos y aseguradoras | FCFE, flujo para el accionista | Ke | §10 (y las comunes de §1-§9) |
+| `fcff` | Industriales (por defecto) | FCFF = EBIT·(1−t) + D&A − Capex − ΔNWC | WACC | §11 (y §1-§9) |
+| `fcff_cfo` | Industriales | FCFF desde el CFO: Net Income × FCFF/Net Income | WACC | §1-§9 |
+| `fcfe` | Industriales, sobre todo con mucha deuda o deuda cambiante | FCFE = FCFF − Int·(1−t) + ΔDeuda neta | Ke | §13 |
+| `fcfe_fin` | Bancos y aseguradoras | FCFE = Net Income − g · fondos propios | Ke | §10 |
 
-Código: `model/fcff_cfo_*`, `model/wacc.py`, `valuation/fcff_cfo*.py`, `valuation/enterprise.py`
-(VE, puente, sensibilidad, escenarios), `reports/fcff_cfo_markdown.py` y
-`reports/enterprise_markdown.py` para fcff_cfo; `model/fcfe_projection.py`, `valuation/fcfe*.py`
-y `reports/fcfe_markdown.py` para fcfe. Común a los dos: `model/revenue_projection.py` (ventas
-y Net Income), `model/cost_of_equity.py` (Ke y beta), `model/tax.py` (t efectivo),
-`model/discount_rate.py`, `valuation/discounting.py`, `valuation/run.py`, `reports/format.py`.
+| VT (`vt`) | Fórmula | Por defecto en |
+|---|---|---|
+| `gordon` | CF_N · (1 + g) / (r − g) | Bancos y aseguradoras |
+| `gordon_value_driver` | Beneficio_N · (1 + g) · (1 − g / RONIC) / (r − g) | Industriales (`[default]`) |
+| `vt_mult` | M × EBITDA_N (FCFF) o M × Net Income_N (FCFE) | — |
+
+Detalle de los métodos de VT y de las comprobaciones de consistencia en §12.
+
+Código: `model/fcff_projection.py`, `valuation/fcff*.py`, `reports/fcff_markdown.py` (fcff);
+`model/fcff_cfo_*`, `valuation/fcff_cfo*.py`, `reports/fcff_cfo_markdown.py` (fcff_cfo);
+`model/fcfe_projection.py`, `valuation/fcfe.py`, `valuation/fcfe_result.py`,
+`reports/fcfe_markdown.py` (fcfe); `model/fcfe_fin_projection.py`, `valuation/fcfe_fin*.py`,
+`reports/fcfe_fin_markdown.py` (fcfe_fin). Los dos FCFF comparten `model/wacc.py`,
+`valuation/enterprise.py` (VE, puente, sensibilidad, escenarios) y
+`reports/enterprise_markdown.py`; los dos FCFE, `valuation/equity.py`. Común a todos:
+`model/revenue_projection.py` (ventas y Net Income), `model/cost_of_equity.py` (Ke y beta),
+`model/tax.py` (t efectivo), `model/discount_rate.py`, `model/terminal_methods.py` (VT),
+`model/checks.py` (avisos), `model/returns.py` (ROIC y ROE), `valuation/discounting.py`,
+`valuation/run.py`, `reports/format.py`.
 
 ## 1. Datos históricos
 
@@ -34,9 +51,9 @@ Por cada ejercicio histórico (4 años anuales de Yahoo Finance):
 
 ### Correspondencia con Yahoo Finance
 
-"Obligatorio" se refiere al modelo `fcff_cfo`. Con FCFE solo son obligatorios ventas, Net
-Income, fondos propios, acciones diluidas y cotización; el resto se carga si está (`None` si
-no).
+"Obligatorio" se refiere a los modelos `fcff`, `fcff_cfo` y `fcfe`, salvo que se indique.
+Con `fcfe_fin` solo son obligatorios ventas, Net Income, fondos propios, acciones diluidas y
+cotización; el resto se carga si está (`None` si no).
 
 | Dato del modelo | Fila de Yahoo | Estado | Tratamiento |
 |---|---|---|---|
@@ -48,7 +65,11 @@ no).
 | BAI | Pretax Income | income_stmt | Obligatorio |
 | Provisión de impuestos | Tax Provision | income_stmt | Obligatorio |
 | Acciones diluidas | Diluted Average Shares (último ejercicio) | income_stmt | Obligatorio |
-| CFO | Operating Cash Flow | cashflow | Obligatorio |
+| CFO | Operating Cash Flow | cashflow | Obligatorio solo en fcff_cfo |
+| D&A | Depreciation And Amortization (cashflow; si no, income_stmt) | cashflow | Obligatorio en fcff y fcfe |
+| Clientes | Accounts Receivable | balance_sheet | Obligatorio en fcff y fcfe |
+| Existencias | Inventory | balance_sheet | 0 con aviso si falta (empresas sin existencias) |
+| Proveedores | Accounts Payable | balance_sheet | Obligatorio en fcff y fcfe |
 | Capex | Capital Expenditure | cashflow | Obligatorio, valor absoluto |
 | Emisión de deuda | Issuance Of Debt | cashflow | 0 con aviso si falta |
 | Reembolso de deuda | Repayment Of Debt | cashflow | 0 con aviso si falta, valor absoluto |
@@ -167,10 +188,10 @@ Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita 
 
 - Descuento a final de año: FD_k = 1 / (1 + WACC)^k, con k entero = 1, 2, …, N (el +1 es el ejercicio en curso).
 - VA de los flujos = Σ FCFF_k · FD_k
-- Gordon: VT = FCFF_N · (1 + g) / (WACC − g), con g < WACC y g < rf (error si no se cumple).
+- VT según el método elegido (§12); en todos, g < WACC y g < rf (error si no se cumple).
+  Gordon clásico: VT = FCFF_N · (1 + g) / (WACC − g).
 - VA del VT = VT · FD_N
 - VE = VA de los flujos + VA del VT
-- Múltiplo de salida: no implementado.
 
 Se informa siempre el peso del VT descontado sobre el VE.
 
@@ -196,7 +217,9 @@ Nunca se resta la deuda neta y se suma la caja a la vez.
 
 Tabla de valor por acción con WACC (filas) × g terminal (columnas), centrada en los valores
 de la valoración. Pasos en `src/dcf/defaults.py`. Las celdas con g ≥ WACC o g ≥ rf quedan vacías (NaN).
-Los FCFF proyectados no dependen del WACC, así que solo cambian el descuento y el VT.
+Los FCFF proyectados no dependen del WACC, así que solo cambian el descuento y el VT, que se
+recalcula con el mismo método (§12). Con `vt_mult` el VT no depende de g ni de la tasa: solo
+cambia el descuento.
 
 ## 8. Escenarios
 
@@ -229,15 +252,21 @@ En una terminal el informe se muestra formateado con `rich`; si la salida se red
 Con el modelo FCFE el informe cambia la sección 2 (solo Ke, sin WACC ni Kd), la 3 (fondos
 propios, ROE y reinversión) y la 4 (sin puente deuda/caja; añade valor contable y P/VC).
 
+La sección 4 incluye la subsección **Valor terminal** (método, fórmula, datos del año N, VT,
+g implícito y múltiplo implícito) y **Comprobaciones de consistencia** con los avisos de §12.
+
 **Resumen de un lote** (varios tickers): `output/resumen_<fecha UTC>.md` y `.csv`, una fila por
-ticker con empresa, modelo, cotización, valor bajista / neutro / alcista y su margen potencial
+ticker con empresa, modelo, método de VT, cotización, valor bajista / neutro / alcista y su margen potencial
 = valor / cotización − 1, tasa de descuento (WACC o Ke) y g con sus fuentes (rf, PRM, beta y,
-en FCFF, Kd y t), y todos los avisos (carga, modelo, tasa, proyección, escenarios no válidos).
+en FCFF, Kd y t), y todos los avisos (carga, modelo, tasa, proyección, escenarios no válidos
+y comprobaciones de consistencia).
 Sin escenarios, bajista y alcista quedan vacíos y el neutro es la valoración central. Los
 tickers que fallan se incluyen con su error. CSV con separador `;`, decimal `,` y UTF-8 con
 BOM (Excel en español); números sin redondear, tasas y márgenes en decimal.
 
-## 10. Modelo FCFE (bancos y aseguradoras)
+## 10. Modelo FCFE_FIN (bancos y aseguradoras)
+
+Antes se llamaba `fcfe`; ese nombre es ahora el FCFE 1.2 para industriales (§13).
 
 En una financiera la deuda (depósitos, reservas técnicas) es la materia prima del negocio, no
 su financiación, y el CFO incluye la variación de préstamos y depósitos (SAN.MC: CFO 2025 de
@@ -257,12 +286,15 @@ las ventas y ese crecimiento se financia reteniendo beneficio (capital regulator
 - FCFE_t = Net Income_t − g_t · FP_{t−1}
 - FP_t = FP_{t−1} · (1 + g_t)
 
-**Descuento y valor terminal:** a Ke (CAPM, §4, misma selección de beta), a final de año.
+**Descuento y valor terminal:** a Ke (CAPM, §4, misma selección de beta), a final de año. El
+VT sigue el método elegido (§12); por defecto, Gordon clásico.
 
-- FCFE_{N+1} = Net Income_N · (1 + g) − g · FP_N: el beneficio crece a g y solo se retiene lo
-  necesario para que los fondos propios crezcan a g. No se usa FCFE_N · (1 + g), porque la
-  reinversión del año N corresponde a g_N y no al g terminal.
-- VT = FCFE_{N+1} / (Ke − g), con g < Ke y g < rf (error si no se cumple).
+- `gordon`: VT = FCFE_N · (1 + g) / (Ke − g).
+- `gordon_value_driver`: VT = Net Income_N · (1 + g) · (1 − g / ROE) / (Ke − g), con ROE el
+  histórico medio (Net Income_i / FP_{i−1}) o el forzado. Con ROE = Net Income_{N+1} / FP_N
+  coincide con la fórmula anterior de este modelo, Net Income_N · (1 + g) − g · FP_N.
+- `vt_mult`: VT = P/E × Net Income_N.
+- En todos, g < Ke y g < rf (error si no se cumple).
 - Fondos propios = Σ FCFE_k / (1 + Ke)^k + VT / (1 + Ke)^N (debe ser > 0).
 
 **Valor por acción** = Fondos propios / acciones diluidas. No hay puente: el FCFE ya es del
@@ -285,3 +317,97 @@ desplaza Ke con `wacc_shift`).
 - Las betas de Yahoo de algunas financieras son muy bajas (CABK.MC 0,12; MAP.MC 0,29 el
   2026-11-19): conviene revisarlas con `[beta]` en `market_inputs.toml`.
 
+## 11. Modelo FCFF (desde el EBIT; por defecto en industriales)
+
+Fórmula 1.1 de `docs/dcf_metodos.md`:
+
+FCFF = EBIT · (1 − t) + D&A − Capex − ΔNWC
+
+**Ratios históricos** (medias aritméticas de los 4 años, salvo t):
+
+- Margen EBIT = EBIT_i / Ventas_i; D&A / ventas; Capex / ventas.
+- Circulante comercial NWC_i = clientes_i + existencias_i − proveedores_i; NWC / ventas.
+- t = mediana de los tipos efectivos (§4).
+- FCFF histórico_i = EBIT_i · (1 − t) + D&A_i − Capex_i − (NWC_i − NWC_{i−1}), desde el
+  segundo año.
+
+**Proyección:** ventas como en §3. Para cada año t:
+
+- NOPAT_t = Ventas_t · margen EBIT · (1 − t)
+- D&A_t = Ventas_t · D&A/ventas; Capex_t = Ventas_t · Capex/ventas
+- NWC_t = Ventas_t · NWC/ventas; ΔNWC_t = NWC_t − NWC_{t−1}, con NWC_0 el último histórico.
+  Un NWC negativo (proveedores > clientes + existencias) genera caja al crecer.
+- FCFF_t = NOPAT_t + D&A_t − Capex_t − ΔNWC_t
+
+**Descuento, VT y puente:** como en §5-§6 (WACC, final de año, VE − deuda + caja −
+minoritarios), con el VT de §12.
+
+## 12. Valor terminal y comprobaciones de consistencia
+
+`r` es la tasa del modelo (WACC en fcff y fcff_cfo, Ke en fcfe y fcfe_fin) y `CF_N` el flujo
+del último año proyectado (FCFF o FCFE).
+
+| Método | Fórmula | Datos del año N |
+|---|---|---|
+| `gordon` | VT = CF_N · (1 + g) / (r − g) | CF_N |
+| `gordon_value_driver` | VT = Beneficio_N · (1 + g) · (1 − g / RONIC) / (r − g) | NOPAT_N y RONIC (FCFF); Net Income_N y ROE (FCFE) |
+| `vt_mult` | VT = M × métrica_N | EBITDA_N y EV/EBITDA (FCFF); Net Income_N y P/E (FCFE) |
+
+- **Value driver:** g / RONIC es la parte del beneficio que hay que reinvertir para crecer a
+  g. Con RONIC = r el crecimiento no crea valor (VT = Beneficio_N · (1 + g) / r).
+  - NOPAT_N: en fcff, el de la proyección; en fcff_cfo, Ventas_N · margen EBIT medio · (1 − t).
+  - RONIC por precedencia: `--set ronic=` > `[ronic."TICKER"]` de `market_inputs.toml` >
+    ROIC histórico medio, ROIC_i = NOPAT_i / capital invertido_{i−1}, con capital invertido
+    = deuda total + fondos propios − caja. En los FCFE, el análogo es el ROE histórico medio
+    (Net Income_i / FP_{i−1}). Sin RONIC disponible, error.
+- **Múltiplo de salida:** precedencia `--set exit_multiple=` > `[exit_multiple."TICKER"]` de
+  `market_inputs.toml` (con fuente y fecha); sin múltiplo, error. EBITDA_N = EBIT_N + D&A_N
+  (en fcff_cfo, ventas_N · (margen EBIT + D&A/ventas) medios; sin D&A, no disponible).
+- **g implícito:** el g que, con Gordon clásico sobre CF_N, da el mismo VT:
+  g_impl = (r · VT − CF_N) / (VT + CF_N). Se informa siempre, junto con el múltiplo implícito
+  VT / métrica_N.
+
+**Comprobaciones (avisos, no detienen la valoración).** Se muestran en el informe
+(«Comprobaciones de consistencia») y en el resumen del lote:
+
+| Aviso | Condición | Umbral (`config/thresholds.toml`, `[warnings]`) |
+|---|---|---|
+| Flujo histórico negativo | FCFF_i < 0 (o FCFE_i en los FCFE) | — |
+| Último año atípico | \|CF_último − media de los anteriores\| / \|media\| > umbral; por encima, posible sobrevaloración si es puntual | `last_flow_deviation` = 0.33 |
+| VT incoherente | \|g_impl − g\| > umbral (value driver y múltiplo) | `implied_growth_gap` = 0.0075 (0,75 puntos) |
+| RONIC muy alto | RONIC (o ROE) > umbral × r: supone una ventaja competitiva duradera; un RONIC cercano a r es más prudente | `ronic_to_rate` = 2 |
+
+- Los flujos históricos comprobados: FCFF en fcff y fcff_cfo (el de cada modelo); FCFE
+  (FCFF_i − Int_i·(1−t) + ΔDeuda neta_i) y FCFF en fcfe; Net Income_i − ΔFP_i en fcfe_fin.
+- `config/thresholds.toml` es opcional (`dcf --thresholds` usa otro); sin él, los valores de
+  `src/dcf/defaults.py`. Claves desconocidas o valores no positivos → error.
+
+## 13. Modelo FCFE para industriales (fórmula 1.2)
+
+Fórmula 1.2 de `docs/dcf_metodos.md`: FCFE = FCFF − Int · (1 − t) + ΔDeuda neta. Útil en
+empresas con mucha deuda o con una deuda que cambia mucho, donde el WACC con pesos constantes
+encaja peor.
+
+**Supuestos de deuda:**
+
+- FCFF_t como en §11.
+- Kd = media de los Kd_i (§4); t = mediana de los tipos efectivos.
+- D/(D+E) con D contable (deuda total) y E a mercado (cotización × acciones diluidas),
+  constante: la deuda neta financia esa parte de la reinversión neta.
+- DN_0 = deuda total − caja del último balance.
+
+**Proyección:**
+
+- Intereses_t = Kd · DN_{t−1}
+- Reinversión neta_t = Capex_t − D&A_t + ΔNWC_t
+- ΔDeuda neta_t = D/(D+E) · reinversión neta_t; DN_t = DN_{t−1} + ΔDeuda neta_t
+- FCFE_t = FCFF_t − Intereses_t · (1 − t) + ΔDeuda neta_t
+- Net Income_t = (EBIT_t − Intereses_t) · (1 − t) (base del value driver y del P/E)
+
+**Descuento y valor:** a Ke (CAPM, §4), a final de año, con el VT de §12.
+Valor descontado = Σ FCFE_k / (1 + Ke)^k + VT / (1 + Ke)^N. El FCFF es consolidado, así que
+fondos propios = valor descontado − minoritarios. No se suma caja ni se resta deuda: ya están
+en el flujo (intereses y variación de deuda neta).
+
+**Limitaciones:** el apalancamiento D/(D+E) es constante y a valor de mercado del momento; el
+Kd es el histórico medio; la caja inicial reduce la deuda neta y, con ella, los intereses.

@@ -1,0 +1,16 @@
+# Umbrales de los avisos de consistencia de la valoración (docs/metodologia.md §12).
+# Si falta este fichero o alguna clave, se usan los valores de src/dcf/defaults.py.
+# Tasas y desviaciones en decimal: 0.33 = 33 %, 0.0075 = 0,75 puntos.
+
+[warnings]
+# Aviso si el último flujo histórico (FCFF o FCFE) se desvía de la media de los años
+# anteriores más que este porcentaje: posible sobrevaloración por un año puntual.
+last_flow_deviation = 0.33
+
+# Aviso si el g implícito en el valor terminal (el que, con Gordon clásico sobre el
+# flujo del año N, daría el mismo VT) difiere del g supuesto más que estos puntos.
+implied_growth_gap = 0.0075
+
+# Aviso si el RONIC (ROE en FCFE) del value driver supera este múltiplo de la tasa de
+# descuento: supone una ventaja competitiva muy duradera.
+ronic_to_rate = 2.0

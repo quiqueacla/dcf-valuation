@@ -51,3 +51,17 @@
 # value =
 # source = ""
 # date = AAAA-MM-DD
+
+# Opcional, por ticker: múltiplo de salida del valor terminal (vt_mult): EV/EBITDA en los
+# modelos FCFF y P/E en los FCFE. --set exit_multiple= prevalece. Sin múltiplo, vt_mult da error.
+# [exit_multiple."IDR.MC"]
+# value = 9.0
+# source = "Mediana EV/EBITDA de comparables (introducido por el usuario)"
+# date = 2026-11-21
+
+# Opcional, por ticker: RONIC del Gordon con value driver (ROE en los FCFE), en decimal.
+# --set ronic= prevalece. Sin él se usa el ROIC (o ROE) histórico medio.
+# [ronic."IDR.MC"]
+# value = 0.10
+# source = "RONIC ≈ WACC a largo plazo (supuesto prudente)"
+# date = 2026-11-21

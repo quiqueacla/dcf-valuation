@@ -1,22 +1,34 @@
-# Tipo de empresa y modelo de valoración según el sector y la industria de Yahoo Finance.
-# Se usan las claves de Yahoo info["sectorKey"] e info["industryKey"] (en minúsculas
-# con guiones), no los nombres que se muestran en el informe.
+# Tipo de empresa, modelo de valoración y valor terminal según el sector y la industria
+# de Yahoo Finance. Se usan las claves de Yahoo info["sectorKey"] e info["industryKey"]
+# (en minúsculas con guiones), no los nombres que se muestran en el informe.
 #
 # Orden de búsqueda: primero la industria en todas las secciones, después el sector.
-# Lo que no encaje con ninguna regla es "industrial" y se valora con el modelo fcff_cfo.
-# Tipos válidos: banco, aseguradora, inmobiliaria.
-# model (opcional): "fcff_cfo" (por defecto) o "fcfe". Se puede forzar con dcf --model.
+# Lo que no encaje con ninguna regla es "industrial".
+# Tipos con sección: banco, aseguradora, inmobiliaria. [default] fija el modelo y el VT de
+# los industriales y de los tipos que no indican los suyos.
+#
+# model (opcional): "fcff" (FCFF desde el EBIT), "fcff_cfo" (FCFF desde el CFO),
+#   "fcfe" (FCFE 1.2 para industriales) o "fcfe_fin" (FCFE de financieras).
+# vt (opcional): "gordon", "gordon_value_driver" o "vt_mult".
+# Se pueden forzar con dcf --model y dcf --vt. Ver docs/dcf_metodos.md y
+# docs/metodologia.md §12.
 #
 # Claves comprobadas con Yahoo el 2026-11-19: SAN.MC y JPM (banks-diversified),
 # CABK.MC (banks-regional), MAP.MC y ALV.DE (insurance-diversified),
 # MRL.MC y O (sector real-estate).
 
+[default]
+model = "fcff"
+vt = "gordon_value_driver"
+
 [banco]
-model = "fcfe"
+model = "fcfe_fin"
+vt = "gordon"
 industries = ["banks-diversified", "banks-regional"]
 
 [aseguradora]
-model = "fcfe"
+model = "fcfe_fin"
+vt = "gordon"
 # Los corredores de seguros (insurance-brokers) no asumen riesgo: se quedan como industriales.
 industries = [
     "insurance-diversified",
@@ -27,6 +39,6 @@ industries = [
 ]
 
 [inmobiliaria]
-# Sin modelo adecuado todavía: se valora con fcff_cfo y el informe lo avisa.
+# Sin modelo adecuado todavía: se valora con el de [default] y el informe lo avisa.
 # Todo el sector: SOCIMI/REIT (reit-*), promotoras y servicios inmobiliarios.
 sectors = ["real-estate"]

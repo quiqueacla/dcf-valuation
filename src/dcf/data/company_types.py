@@ -1,4 +1,4 @@
-"""Clasificación del tipo de empresa a partir del sector y la industria de la fuente.
+"""Clasificación del tipo de empresa y elección de modelo + valor terminal por tipo.
 
 La tabla de correspondencia está en ``config/company_types.toml``.
 """
@@ -9,29 +9,40 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from dcf.company import CompanyType, ValuationModel
-from dcf.defaults import DEFAULT_VALUATION_MODEL
+from dcf.company import CompanyType, TerminalMethod, ValuationModel
+from dcf.defaults import DEFAULT_TERMINAL_METHOD, DEFAULT_VALUATION_MODEL
 
 DEFAULT_COMPANY_TYPES_PATH = Path("config/company_types.toml")
 """Ubicación por defecto de la tabla de tipos (relativa a la raíz del repo)."""
 
+DEFAULT_SECTION = "default"
+"""Sección con el modelo y el VT de los tipos que no los indican (industriales incluidos)."""
+
 
 @dataclass(frozen=True, slots=True)
 class CompanyTypeRules:
-    """Reglas para pasar de sector e industria de la fuente a tipo de empresa.
+    """Reglas para pasar de sector e industria a tipo de empresa, modelo y VT.
 
     Attributes:
         by_industry: Clave de industria (``industryKey`` de Yahoo) → tipo de empresa.
         by_sector: Clave de sector (``sectorKey`` de Yahoo) → tipo de empresa. Solo se
             usa si la industria no está en ``by_industry``.
-        models: Modelo de valoración de cada tipo (clave ``model`` de su sección). Los
-            tipos que no aparecen usan ``DEFAULT_VALUATION_MODEL`` (fcff_cfo).
+        models: Modelo de valoración de cada tipo (clave ``model`` de su sección).
+        terminal_methods: Método de VT de cada tipo (clave ``vt`` de su sección).
+        default_model: Modelo de los tipos sin ``model`` (sección ``[default]`` o
+            ``DEFAULT_VALUATION_MODEL``).
+        default_terminal: VT de los tipos sin ``vt`` (sección ``[default]`` o
+            ``DEFAULT_TERMINAL_METHOD``).
     """
 
     by_industry: Mapping[str, CompanyType] = field(default_factory=dict)
     by_sector: Mapping[str, CompanyType] = field(default_factory=dict)
     models: Mapping[CompanyType, ValuationModel] = field(default_factory=dict)
+    terminal_methods: Mapping[CompanyType, TerminalMethod] = field(default_factory=dict)
+    default_model: ValuationModel = ValuationModel(DEFAULT_VALUATION_MODEL)
+    default_terminal: TerminalMethod = TerminalMethod(DEFAULT_TERMINAL_METHOD)
 
     # Modelo de valoración para un tipo de empresa (o sin clasificar).
     def model_for(self, company_type: CompanyType | None) -> ValuationModel:
@@ -41,10 +52,25 @@ class CompanyTypeRules:
             company_type: Tipo de empresa; ``None`` si no se ha clasificado.
 
         Returns:
-            El modelo de la tabla, o ``DEFAULT_VALUATION_MODEL`` si no lo indica.
+            El modelo de la tabla, o el de ``[default]`` si no lo indica.
         """
-        default = ValuationModel(DEFAULT_VALUATION_MODEL)
-        return default if company_type is None else self.models.get(company_type, default)
+        if company_type is None:
+            return self.default_model
+        return self.models.get(company_type, self.default_model)
+
+    # Método de valor terminal para un tipo de empresa (o sin clasificar).
+    def terminal_for(self, company_type: CompanyType | None) -> TerminalMethod:
+        """Devuelve el método de valor terminal que se aplica a un tipo de empresa.
+
+        Args:
+            company_type: Tipo de empresa; ``None`` si no se ha clasificado.
+
+        Returns:
+            El VT de la tabla, o el de ``[default]`` si no lo indica.
+        """
+        if company_type is None:
+            return self.default_terminal
+        return self.terminal_methods.get(company_type, self.default_terminal)
 
 
 # Tipo de empresa: primero por industria, luego por sector; si no encaja, industrial.
@@ -79,17 +105,31 @@ def _keys(table: dict[str, object], key: str, label: str, path: Path) -> list[st
     return [v.strip().lower() for v in value]
 
 
-# Lee config/company_types.toml y valida tipos y claves repetidas.
+# Valor de un enum leído del TOML, con error claro si no es válido.
+def _enum_value[E: (ValuationModel, TerminalMethod)](
+    enum: type[E], table: dict[str, Any], key: str, label: str, path: Path
+) -> E | None:
+    if key not in table:
+        return None
+    valid = sorted(m.value for m in enum)
+    if table[key] not in valid:
+        raise ValueError(f"{path}: [{label}].{key} = {table[key]!r} no válido; usa {valid}")
+    return enum(table[key])
+
+
+# Lee config/company_types.toml y valida tipos, modelos, VT y claves repetidas.
 def load_company_type_rules(path: Path = DEFAULT_COMPANY_TYPES_PATH) -> CompanyTypeRules:
     """Carga la tabla de tipos de empresa.
 
     Args:
         path: Fichero TOML con una sección por tipo (``[banco]``, ``[aseguradora]``,
-            ``[inmobiliaria]``), listas ``industries`` y ``sectors`` y, opcional, el
-            modelo de valoración ``model`` (``fcff_cfo`` o ``fcfe``).
+            ``[inmobiliaria]``), listas ``industries`` y ``sectors`` y, opcionales, el
+            modelo ``model`` (fcff, fcff_cfo, fcfe, fcfe_fin) y el VT ``vt`` (gordon,
+            gordon_value_driver, vt_mult). La sección ``[default]`` (solo ``model`` y
+            ``vt``) aplica a industriales y a los tipos que no los indican.
 
     Returns:
-        Reglas de clasificación.
+        Reglas de clasificación y de elección de modelo y VT.
 
     Raises:
         FileNotFoundError: Si el fichero no existe.
@@ -102,23 +142,36 @@ def load_company_type_rules(path: Path = DEFAULT_COMPANY_TYPES_PATH) -> CompanyT
         data = tomllib.load(f)
 
     valid = {t.value for t in CompanyType if t is not CompanyType.INDUSTRIAL}
-    valid_models = sorted(m.value for m in ValuationModel)
     by_industry: dict[str, CompanyType] = {}
     by_sector: dict[str, CompanyType] = {}
     models: dict[CompanyType, ValuationModel] = {}
+    terminals: dict[CompanyType, TerminalMethod] = {}
+    default_model = ValuationModel(DEFAULT_VALUATION_MODEL)
+    default_terminal = TerminalMethod(DEFAULT_TERMINAL_METHOD)
     for name, table in data.items():
-        if name not in valid or not isinstance(table, dict):
-            raise ValueError(f"{path}: sección [{name}] no válida; usa {sorted(valid)}")
-        unknown = sorted(set(table) - {"industries", "sectors", "model"})
+        if not isinstance(table, dict) or name not in valid | {DEFAULT_SECTION}:
+            raise ValueError(
+                f"{path}: sección [{name}] no válida; usa {sorted(valid | {DEFAULT_SECTION})}"
+            )
+        if name == DEFAULT_SECTION:
+            unknown = sorted(set(table) - {"model", "vt"})
+            if unknown:
+                raise ValueError(f"{path}: claves desconocidas {unknown} en [{name}]")
+            default_model = _enum_value(ValuationModel, table, "model", name, path) or default_model
+            default_terminal = (
+                _enum_value(TerminalMethod, table, "vt", name, path) or default_terminal
+            )
+            continue
+        unknown = sorted(set(table) - {"industries", "sectors", "model", "vt"})
         if unknown:
             raise ValueError(f"{path}: claves desconocidas {unknown} en [{name}]")
         company_type = CompanyType(name)
-        if "model" in table:
-            if table["model"] not in valid_models:
-                raise ValueError(
-                    f"{path}: [{name}].model = {table['model']!r} no válido; usa {valid_models}"
-                )
-            models[company_type] = ValuationModel(table["model"])
+        model = _enum_value(ValuationModel, table, "model", name, path)
+        if model is not None:
+            models[company_type] = model
+        terminal = _enum_value(TerminalMethod, table, "vt", name, path)
+        if terminal is not None:
+            terminals[company_type] = terminal
         for key, target in (("industries", by_industry), ("sectors", by_sector)):
             for item in _keys(table, key, name, path):
                 if item in target and target[item] is not company_type:
@@ -126,4 +179,11 @@ def load_company_type_rules(path: Path = DEFAULT_COMPANY_TYPES_PATH) -> CompanyT
                         f"{path}: '{item}' aparece en [{target[item].value}] y en [{name}]"
                     )
                 target[item] = company_type
-    return CompanyTypeRules(by_industry=by_industry, by_sector=by_sector, models=models)
+    return CompanyTypeRules(
+        by_industry=by_industry,
+        by_sector=by_sector,
+        models=models,
+        terminal_methods=terminals,
+        default_model=default_model,
+        default_terminal=default_terminal,
+    )

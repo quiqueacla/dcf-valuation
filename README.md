@@ -70,10 +70,11 @@ Notas:
    `--set g=2%`. En el mismo fichero se eligen los modos de escenario (`ventas`, `coste`).
 3. Opcional: revisa `config/company_types.toml`, la tabla que clasifica cada empresa como
    industrial, banco, aseguradora o inmobiliaria según su sector e industria de Yahoo y fija su
-   modelo: **FCFF** (`fcff_cfo`: flujo para la empresa desde el CFO, descontado al WACC) para
-   industriales y
-   **FCFE** (flujo para el accionista, descontado a Ke) para bancos y aseguradoras. Las
-   inmobiliarias se valoran con FCFF y el informe avisa de que el modelo puede no ser adecuado.
+   modelo y su método de valor terminal (VT). Por defecto (`[default]`): **fcff** (FCFF desde
+   el EBIT, al WACC) con **gordon_value_driver**; bancos y aseguradoras: **fcfe_fin** (flujo
+   para el accionista, a Ke) con **gordon**. Las inmobiliarias usan `[default]` y el informe
+   avisa de que el modelo puede no ser adecuado.
+4. Opcional: ajusta los umbrales de los avisos de consistencia en `config/thresholds.toml`.
 
 Las rutas por defecto son relativas a la carpeta del proyecto: ejecuta `dcf` desde ella o
 indica los ficheros con `-c`, `-m` y `-t`.
@@ -87,13 +88,30 @@ dcf -c config/settings.toml -f tickers.example.txt
 dcf ITX.MC --set g=2% --set modes=ventas,coste  # ajustar supuestos sin tocar el fichero
 dcf ITX.MC --set wacc_shift=1.5% --set projection_years=7
 python -m dcf ITX.MC --no-extras                # sin escenarios (más rápido)
-dcf SAN.MC MAP.MC                               # financieras: modelo FCFE automático
+dcf SAN.MC MAP.MC                               # financieras: fcfe_fin + gordon automático
 dcf SAN.MC --model fcff_cfo                     # forzar un modelo (avisa si no es adecuado)
+dcf IDR.MC --model fcfe --vt gordon             # combinar modelo y valor terminal
+dcf IDR.MC --vt vt_mult --set exit_multiple=10  # VT por múltiplo de salida (EV/EBITDA)
+dcf IDR.MC --set ronic=12%                      # RONIC del value driver (por defecto, ROIC histórico)
 dcf ITX.MC --from-cache data/cache/ITX.MC/20261118T103000Z   # repetir sin red
 ```
 
 Claves de `--set`: `terminal_growth` (o `g`), `projection_years`, `modes`, `wacc_shift`,
-`growth_shift` y `rate` (o `discount_rate`). Las tasas admiten `2%` o `0.02`.
+`growth_shift`, `rate` (o `discount_rate`), `exit_multiple` (o `multiple`) y `ronic`. Las
+tasas admiten `2%` o `0.02`.
+
+Modelos (`--model`): `fcff` (EBIT·(1−t) + D&A − Capex − ΔNWC), `fcff_cfo` (desde el CFO),
+`fcfe` (FCFF − Int·(1−t) + ΔDeuda neta, para industriales con mucha deuda) y `fcfe_fin`
+(financieras). Valor terminal (`--vt`): `gordon`, `gordon_value_driver` (con RONIC) y
+`vt_mult` (EV/EBITDA en FCFF, P/E en FCFE). El múltiplo y el RONIC se pueden fijar por ticker
+en `market_inputs.toml` (`[exit_multiple."TICKER"]`, `[ronic."TICKER"]`); el argumento
+prevalece. Sin múltiplo, `vt_mult` da error; sin RONIC se usa el ROIC histórico (ROE en
+FCFE).
+
+Cada informe incluye **comprobaciones de consistencia**: FCFF históricos negativos, último
+FCFF muy distinto de la media de los anteriores (posible sobrevaloración por un año puntual),
+g implícito en el VT alejado del g supuesto y RONIC muy por encima de la tasa. Los umbrales
+están en `config/thresholds.toml` (otro fichero con `--thresholds`).
 
 `--set rate=8%` fuerza la tasa de descuento (WACC en FCFF, Ke en FCFE) de todos los tickers de
 la ejecución. Para forzarla en un solo ticker, usa `[discount_rate."TICKER"]` en
@@ -108,7 +126,7 @@ Cada informe se guarda en `<carpeta>/<TICKER>_<fecha UTC>.md` y cada descarga en
 La tabla de sensibilidad WACC × g se incluye siempre.
 
 Con varios tickers se guarda además un resumen del lote en `<carpeta>/resumen_<fecha UTC>.md`
-y `.csv`, con una fila por ticker: empresa, modelo, cotización, valor bajista, neutro y alcista
+y `.csv`, con una fila por ticker: empresa, modelo, método de VT, cotización, valor bajista, neutro y alcista
 con su margen potencial frente a la cotización, tasa de descuento (WACC o Ke) y g con sus
 fuentes, y avisos. Los tickers que fallan aparecen con su error. El CSV usa el formato de Excel
 en español (separador `;`, decimal `,`, UTF-8 con BOM); las tasas y los márgenes van en

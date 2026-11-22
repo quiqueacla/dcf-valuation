@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from dcf.defaults import DEFAULT_PROJECTION_YEARS
+from dcf.model.checks import WarningThresholds
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 
 DEFAULT_SETTINGS_PATH = Path("config/settings.toml")
@@ -25,7 +26,13 @@ OVERRIDE_KEYS = {
     "growth_shift": "growth_shift",
     "rate": "discount_rate",
     "discount_rate": "discount_rate",
+    "exit_multiple": "exit_multiple",
+    "multiple": "exit_multiple",
+    "ronic": "ronic",
 }
+
+DEFAULT_THRESHOLDS_PATH = Path("config/thresholds.toml")
+"""Umbrales de los avisos de consistencia (opcional; sin él, los de ``dcf.defaults``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,12 +47,18 @@ class AppSettings:
         discount_rate: Tasa de descuento forzada para todos los tickers de la ejecución
             (WACC en FCFF, Ke en FCFE), en decimal; ``None`` = la del fichero o la
             calculada. Solo se fija con ``--set rate=``.
+        exit_multiple: Múltiplo de salida del VT para todos los tickers (EV/EBITDA en
+            FCFF, P/E en FCFE); ``None`` = el del fichero. ``--set exit_multiple=``.
+        ronic: RONIC (ROE en FCFE) del value driver para todos los tickers, en decimal;
+            ``None`` = el del fichero o el histórico. ``--set ronic=``.
     """
 
     terminal_growth: float | None
     scenarios: ScenarioConfig
     projection_years: int = DEFAULT_PROJECTION_YEARS
     discount_rate: float | None = None
+    exit_multiple: float | None = None
+    ronic: float | None = None
 
 
 # Número de una sección TOML; error claro si falta o no es numérico.
@@ -142,8 +155,9 @@ def apply_overrides(settings: AppSettings, pairs: Sequence[str]) -> AppSettings:
 
     Claves: ``terminal_growth`` (o ``g``), ``projection_years``, ``modes``
     (lista separada por comas; vacío = solo neutro), ``wacc_shift``, ``growth_shift`` y
-    ``rate`` (o ``discount_rate``: tasa de descuento forzada, > 0). Las tasas admiten
-    ``2%`` o ``0.02``.
+    ``rate`` (o ``discount_rate``: tasa de descuento forzada, > 0), ``exit_multiple`` (o
+    ``multiple``: múltiplo de salida del VT, p. ej. ``8``) y ``ronic`` (RONIC / ROE del
+    value driver). Las tasas admiten ``2%`` o ``0.02``.
 
     Args:
         settings: Configuración de partida.
@@ -184,7 +198,51 @@ def apply_overrides(settings: AppSettings, pairs: Sequence[str]) -> AppSettings:
             if rate <= 0:
                 raise ValueError(f"--set '{pair}': la tasa de descuento debe ser positiva")
             result = dataclasses.replace(result, discount_rate=rate)
+        elif target == "exit_multiple":
+            multiple = parse_rate(value)
+            if multiple <= 0 or value.strip().endswith("%"):
+                raise ValueError(
+                    f"--set '{pair}': el múltiplo debe ser un número positivo (p. ej. 8)"
+                )
+            result = dataclasses.replace(result, exit_multiple=multiple)
+        elif target == "ronic":
+            ronic = parse_rate(value)
+            if ronic <= 0:
+                raise ValueError(f"--set '{pair}': el RONIC debe ser positivo")
+            result = dataclasses.replace(result, ronic=ronic)
         else:
             scenarios = dataclasses.replace(result.scenarios, growth_shift=parse_rate(value))
             result = dataclasses.replace(result, scenarios=scenarios)
     return result
+
+
+# Lee config/thresholds.toml ([warnings]); sin fichero, los umbrales por defecto.
+def load_thresholds(path: Path = DEFAULT_THRESHOLDS_PATH) -> WarningThresholds:
+    """Carga los umbrales de los avisos de consistencia.
+
+    Claves de ``[warnings]`` (todas opcionales): ``last_flow_deviation`` (0.33 = 33 %),
+    ``implied_growth_gap`` (0.0075 = 0,75 puntos) y ``ronic_to_rate`` (2 = 2 veces la tasa).
+
+    Args:
+        path: Fichero TOML; si no existe se usan los valores de :mod:`dcf.defaults`.
+
+    Returns:
+        Umbrales validados.
+
+    Raises:
+        ValueError: Si hay claves desconocidas o valores no numéricos o no positivos.
+    """
+    if not path.is_file():
+        return WarningThresholds()
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    unknown = sorted(set(data) - {"warnings"})
+    if unknown:
+        raise ValueError(f"{path}: secciones desconocidas {unknown}; usa [warnings]")
+    section = data.get("warnings", {})
+    keys = {"last_flow_deviation", "implied_growth_gap", "ronic_to_rate"}
+    unknown = sorted(set(section) - keys)
+    if unknown:
+        raise ValueError(f"{path}: claves desconocidas {unknown} en [warnings]; usa {sorted(keys)}")
+    values = {key: _number(section, key, path, "warnings") for key in keys if key in section}
+    return WarningThresholds(**values)

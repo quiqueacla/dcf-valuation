@@ -15,6 +15,7 @@ from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.discount_rate import DiscountRateChoice
 from dcf.model.fcff_cfo_ratios import HistoricalRatios
 from dcf.model.revenue_projection import RevenueSource
+from dcf.model.terminal_methods import TerminalValueResult
 from dcf.model.terminal_value import validate_terminal_growth
 from dcf.model.wacc import WaccResult
 from dcf.valuation.scenarios import ScenarioResult
@@ -72,6 +73,10 @@ class FcffCfoValuationResult:
         sensitivity: Valor por acción por WACC (filas) × crecimiento terminal (columnas).
         scenarios: Escenarios bajista, neutro y alcista (vacío si no se pidieron).
         warnings: Avisos de la valoración (proyección del escenario central).
+        terminal: Valor terminal con su método, entradas y chequeos (g implícito,
+            múltiplo implícito, RONIC); ``None`` solo en resultados construidos a mano.
+        checks: Comprobaciones de consistencia: flujos históricos negativos, último año
+            atípico y avisos del valor terminal.
     """
 
     ticker: str
@@ -94,6 +99,8 @@ class FcffCfoValuationResult:
     sensitivity: pd.DataFrame
     scenarios: tuple[ScenarioResult, ...] = ()
     warnings: tuple[str, ...] = ()
+    terminal: TerminalValueResult | None = None
+    checks: tuple[str, ...] = ()
 
     # Valida fechas con zona, g < tasa de descuento y g < rf, horizonte coherente y VE positivo.
     def __post_init__(self) -> None:

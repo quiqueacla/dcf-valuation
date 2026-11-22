@@ -1,4 +1,4 @@
-"""Piezas del modelo FCFF (fcff_cfo) separadas de su proyección.
+"""Piezas comunes a los modelos FCFF (fcff, fcff_cfo) y a fcfe para el VT.
 
 WACC elegido, valor de empresa, puente a fondos propios, sensibilidad y escenarios.
 Funciones puras, sin I/O. Fórmulas en ``docs/metodologia.md`` §4-§8.
@@ -32,10 +32,13 @@ from dcf.valuation.discounting import (
 )
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioName, ScenarioResult
 
-FCFF = ValuationModel.FCFF_CFO
+FCFF = ValuationModel.FCFF
 
-FlowsForCase = Callable[[EstimateCase], tuple[list[float], tuple[str, ...]]]
-"""Función (estimación de ventas) → (FCFF proyectados, avisos de la proyección)."""
+TerminalFn = Callable[[float, float], float]
+"""Función (tasa de descuento, g) → valor terminal al final del año N, en EUR."""
+
+FlowsForCase = Callable[[EstimateCase], tuple[list[float], tuple[str, ...], TerminalFn | None]]
+"""Función (estimación de ventas) → (flujos proyectados, avisos, VT; None = Gordon clásico)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +48,7 @@ class EnterpriseValue:
     Attributes:
         discount_factors: 1 / (1 + WACC)^k para k = 1..N.
         present_values: Valor actual de cada FCFF proyectado.
-        terminal_value: Valor terminal (Gordon) al final del año N, sin descontar.
+        terminal_value: Valor terminal al final del año N, sin descontar.
         terminal_value_present: Valor terminal descontado a hoy.
         enterprise_value: Suma de los valores actuales de los FCFF y del valor terminal.
     """
@@ -85,12 +88,13 @@ def resolve_wacc(
     return wacc, rate
 
 
-# VE = Σ FCFF_k / (1 + WACC)^k + VT_Gordon / (1 + WACC)^N.
+# VE = Σ FCFF_k / (1 + WACC)^k + VT / (1 + WACC)^N, con el VT del método elegido.
 def compute_enterprise_value(
     fcffs: Sequence[float],
     wacc: float,
     terminal_growth: float,
     risk_free_rate: float,
+    terminal: TerminalFn | None = None,
 ) -> EnterpriseValue:
     """Descuenta los FCFF proyectados y el valor terminal.
 
@@ -99,6 +103,9 @@ def compute_enterprise_value(
         wacc: WACC en decimal.
         terminal_growth: g terminal en decimal.
         risk_free_rate: rf en decimal, para validar g < rf.
+        terminal: VT en función de (tasa, g) (ver
+            :func:`dcf.model.terminal_methods.terminal_function`); ``None`` = Gordon
+            clásico FCFF_N · (1 + g) / (WACC − g).
 
     Returns:
         Valor de empresa y su descomposición.
@@ -108,7 +115,10 @@ def compute_enterprise_value(
     """
     if not fcffs:
         raise ValueError("Se necesita al menos un FCFF proyectado")
-    tv = gordon_terminal_value(float(fcffs[-1]), wacc, terminal_growth, risk_free_rate)
+    if terminal is None:
+        tv = gordon_terminal_value(float(fcffs[-1]), wacc, terminal_growth, risk_free_rate)
+    else:
+        tv = terminal(wacc, terminal_growth)
     d = discount_with_terminal_value(fcffs, wacc, tv)
     return EnterpriseValue(
         discount_factors=d.discount_factors,
@@ -148,6 +158,7 @@ def sensitivity_table(
     wacc_step: float = SENSITIVITY_WACC_STEP,
     growth_step: float = SENSITIVITY_GROWTH_STEP,
     steps_each_side: int = SENSITIVITY_STEPS_EACH_SIDE,
+    terminal: TerminalFn | None = None,
 ) -> pd.DataFrame:
     """Calcula la sensibilidad del valor por acción al WACC y al g terminal.
 
@@ -160,6 +171,7 @@ def sensitivity_table(
         wacc_step: Paso entre filas, en decimal.
         growth_step: Paso entre columnas, en decimal.
         steps_each_side: Pasos a cada lado del valor central.
+        terminal: VT en función de (tasa, g); ``None`` = Gordon clásico.
 
     Returns:
         DataFrame con índice ``discount_rate`` (WACC) y columnas ``terminal_growth``
@@ -167,7 +179,7 @@ def sensitivity_table(
     """
 
     def value_for(w: float, g: float) -> float:
-        ev = compute_enterprise_value(fcffs, w, g, risk_free_rate)
+        ev = compute_enterprise_value(fcffs, w, g, risk_free_rate, terminal)
         return value_per_share(equity_value(ev.enterprise_value, balance), balance.diluted_shares)
 
     return sensitivity_grid(
@@ -201,11 +213,11 @@ def compute_fcff_scenarios(
     results: list[ScenarioResult] = []
     for name in ScenarioName:
         case, w, g = scenario_inputs(name, config, wacc, assumptions.terminal_growth)
-        flows, warnings = flows_for(case)
+        flows, warnings, terminal = flows_for(case)
         try:
             if w <= 0:
                 raise ValueError(f"WACC del escenario no positivo ({w})")
-            ev = compute_enterprise_value(flows, w, g, risk_free_rate)
+            ev = compute_enterprise_value(flows, w, g, risk_free_rate, terminal)
         except ValueError as exc:
             results.append(ScenarioResult(name, case, w, g, None, None, None, str(exc), warnings))
             continue

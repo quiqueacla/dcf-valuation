@@ -66,16 +66,18 @@ def _parse_beta(data: dict[str, Any], path: Path) -> tuple[BetaSettings, dict[st
     return _parse_beta_settings(general, "beta", path), by_ticker
 
 
-# Sección [discount_rate]: solo subtablas por ticker ([discount_rate."REP.MC"]).
-def _parse_discount_rates(data: dict[str, Any], path: Path) -> dict[str, MarketRate]:
-    raw: dict[str, Any] = data.get("discount_rate", {})
+# Sección por ticker ([discount_rate."REP.MC"], [exit_multiple."X"], [ronic."X"]).
+def _parse_discount_rates(
+    data: dict[str, Any], path: Path, section: str = "discount_rate"
+) -> dict[str, MarketRate]:
+    raw: dict[str, Any] = data.get(section, {})
     rates: dict[str, MarketRate] = {}
     for ticker, table in raw.items():
-        label = f'discount_rate."{ticker}"'
+        label = f'{section}."{ticker}"'
         if not isinstance(table, dict):
             raise ValueError(
-                f"{path}: [discount_rate] solo admite secciones por ticker, "
-                f'p. ej. [discount_rate."REP.MC"] (clave {ticker!r})'
+                f"{path}: [{section}] solo admite secciones por ticker, "
+                f'p. ej. [{section}."REP.MC"] (clave {ticker!r})'
             )
         unknown = sorted(set(table) - {"value", "source", "date"})
         if unknown:
@@ -115,6 +117,8 @@ def load_market_inputs(path: Path = DEFAULT_MARKET_INPUTS_PATH) -> MarketInputs:
     beta, beta_by_ticker = _parse_beta(data, path)
     return MarketInputs(
         discount_rate_by_ticker=_parse_discount_rates(data, path),
+        exit_multiple_by_ticker=_parse_discount_rates(data, path, "exit_multiple"),
+        ronic_by_ticker=_parse_discount_rates(data, path, "ronic"),
         risk_free_rate=_parse_rate(data, "risk_free_rate", path),
         market_risk_premium=_parse_rate(data, "market_risk_premium", path),
         default_cost_of_debt=(

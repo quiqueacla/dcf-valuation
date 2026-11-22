@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import dcf
-from dcf.company import Company, ValuationModel, model_suitability_warning
+from dcf.company import Company, TerminalMethod, ValuationModel, model_suitability_warning
 from dcf.data.company_types import (
     DEFAULT_COMPANY_TYPES_PATH,
     CompanyTypeRules,
@@ -24,6 +24,7 @@ from dcf.data.company_types import (
 from dcf.data.market_inputs import DEFAULT_MARKET_INPUTS_PATH, load_market_inputs
 from dcf.data.yahoo import DEFAULT_CACHE_DIR, build_company, fetch_company, load_raw
 from dcf.model.assumptions import Assumptions
+from dcf.model.checks import WarningThresholds
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
 from dcf.reports.console import print_report
 from dcf.reports.markdown import render_report
@@ -35,8 +36,15 @@ from dcf.reports.summary import (
     summary_csv,
     summary_row,
 )
-from dcf.settings import DEFAULT_SETTINGS_PATH, AppSettings, apply_overrides, load_settings
-from dcf.valuation.run import AnyValuationResult, run_valuation
+from dcf.settings import (
+    DEFAULT_SETTINGS_PATH,
+    DEFAULT_THRESHOLDS_PATH,
+    AppSettings,
+    apply_overrides,
+    load_settings,
+    load_thresholds,
+)
+from dcf.valuation.run import AnyValuationResult, TerminalOverrides, run_valuation
 
 DEFAULT_OUTPUT_DIR = Path("output")
 
@@ -86,8 +94,20 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model",
         choices=[m.value for m in ValuationModel],
-        help="Fuerza el modelo de valoración (por defecto, el de la tabla de tipos: fcfe para "
-        "bancos y aseguradoras, fcff_cfo para el resto)",
+        help="Fuerza el modelo de valoración (por defecto, el de la tabla de tipos: fcfe_fin "
+        "para bancos y aseguradoras, fcff para el resto)",
+    )
+    p.add_argument(
+        "--vt",
+        choices=[m.value for m in TerminalMethod],
+        help="Fuerza el método de valor terminal (por defecto, el de la tabla de tipos: "
+        "gordon_value_driver; gordon para financieras)",
+    )
+    p.add_argument(
+        "--thresholds",
+        type=Path,
+        default=DEFAULT_THRESHOLDS_PATH,
+        help=f"Umbrales de los avisos de consistencia (por defecto {DEFAULT_THRESHOLDS_PATH})",
     )
     p.add_argument(
         "-o",
@@ -103,7 +123,8 @@ def _parser() -> argparse.ArgumentParser:
         default=[],
         metavar="CLAVE=VALOR",
         help="Ajusta la configuración: terminal_growth (g), projection_years, modes, "
-        "wacc_shift, growth_shift, rate (tasa de descuento forzada: WACC o Ke). "
+        "wacc_shift, growth_shift, rate (tasa de descuento forzada: WACC o Ke), "
+        "exit_multiple (múltiplo del VT) y ronic (RONIC/ROE del value driver). "
         "Tasas como 2%% o 0.02. Repetible.",
     )
     p.add_argument("--g", type=float, help="Crecimiento terminal en decimal (atajo de --set g=)")
@@ -160,13 +181,14 @@ def _load_company(
     kd: MarketRate | None,
     type_rules: CompanyTypeRules,
     model: ValuationModel | None,
+    terminal: TerminalMethod | None = None,
 ) -> Company:
     if from_cache is None:
-        return fetch_company(ticker, kd, cache_dir, type_rules, model)
+        return fetch_company(ticker, kd, cache_dir, type_rules, model, terminal)
     raw = load_raw(from_cache)
     if raw.ticker != ticker:
         raise ValueError(f"La caché {from_cache} es de {raw.ticker}, no de {ticker}")
-    return build_company(raw, kd, type_rules=type_rules, model=model)
+    return build_company(raw, kd, type_rules=type_rules, model=model, terminal=terminal)
 
 
 # Valora un ticker y guarda su informe; devuelve compañía, resultado y ruta del informe.
@@ -178,10 +200,18 @@ def _value_one(
     market: MarketInputs,
     moment: datetime,
     type_rules: CompanyTypeRules,
+    thresholds: WarningThresholds,
 ) -> tuple[Company, AnyValuationResult, Path]:
     model = None if args.model is None else ValuationModel(args.model)
+    terminal = None if args.vt is None else TerminalMethod(args.vt)
     company = _load_company(
-        ticker, args.from_cache, args.cache_dir, market.default_cost_of_debt, type_rules, model
+        ticker,
+        args.from_cache,
+        args.cache_dir,
+        market.default_cost_of_debt,
+        type_rules,
+        model,
+        terminal,
     )
     assumptions = Assumptions(terminal_growth=growth, projection_years=settings.projection_years)
     scenarios = None if args.no_extras else settings.scenarios
@@ -190,7 +220,22 @@ def _value_one(
         if settings.discount_rate is None
         else MarketRate(settings.discount_rate, "argumento --set rate", moment)
     )
-    result = run_valuation(company, market, assumptions, moment, scenarios, argument_rate)
+    overrides = TerminalOverrides(
+        multiple=(
+            None
+            if settings.exit_multiple is None
+            else MarketRate(settings.exit_multiple, "argumento --set exit_multiple", moment)
+        ),
+        ronic=(
+            None
+            if settings.ronic is None
+            else MarketRate(settings.ronic, "argumento --set ronic", moment)
+        ),
+        thresholds=thresholds,
+    )
+    result = run_valuation(
+        company, market, assumptions, moment, scenarios, argument_rate, overrides
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     path = args.output_dir / f"{ticker}_{moment:%Y%m%dT%H%M%SZ}.md"
     path.write_text(render_report(company, result), encoding="utf-8")
@@ -203,9 +248,10 @@ def _summary(company: Company, result: AnyValuationResult, path: Path) -> str:
     choice = result.discount_rate
     rate = f"{choice.name} {choice.value:.2%}" + (" forzado" if choice.is_forced else "")
     model = company.info.valuation_model.value
+    vt = "" if result.terminal is None else f" + {result.terminal.method.value}"
     parts = [
         f"{result.ticker}: {result.value_per_share:,.2f} € por acción "
-        f"(cotización {price:,.2f} €, {model}, {rate})"
+        f"(cotización {price:,.2f} €, {model}{vt}, {rate})"
     ]
     for s in result.scenarios:
         value = "no válido" if s.value_per_share is None else f"{s.value_per_share:,.2f} €"
@@ -250,6 +296,7 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
             )
         market = load_market_inputs(args.market_inputs)
         type_rules = load_company_type_rules(args.company_types)
+        thresholds = load_thresholds(args.thresholds)
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -261,7 +308,7 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
     for ticker in tickers:
         try:
             company, result, path = _value_one(
-                ticker, args, settings, growth, market, moment, type_rules
+                ticker, args, settings, growth, market, moment, type_rules, thresholds
             )
         except (ValueError, FileNotFoundError) as exc:
             failures += 1

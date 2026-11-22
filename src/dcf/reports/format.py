@@ -19,6 +19,7 @@ from dcf.company import Company, model_suitability_warning
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import CostOfEquityResult
 from dcf.model.discount_rate import DiscountRateChoice
+from dcf.model.terminal_methods import TerminalValueResult
 from dcf.valuation.scenarios import ScenarioResult
 
 MILLIONS = 1e6
@@ -362,3 +363,101 @@ def vs_price(value: float | None, price: float) -> str:
         Texto en porcentaje.
     """
     return "—" if value is None else pct(value / price - 1)
+
+
+TERMINAL_LABEL = {
+    "gordon": "Gordon clásico",
+    "gordon_value_driver": "Gordon con value driver",
+    "vt_mult": "Múltiplo de salida",
+}
+"""Nombre de cada método de valor terminal en el informe."""
+
+
+# Subsección del valor terminal: método, fórmula, entradas y g / múltiplo implícitos.
+def terminal_block(
+    terminal: TerminalValueResult | None,
+    rate_name: str,
+    terminal_growth: float,
+    scale: float,
+    unit: str,
+) -> str:
+    """Construye la subsección del valor terminal.
+
+    Args:
+        terminal: Valor terminal calculado; ``None`` = sin detalle.
+        rate_name: "WACC" o "Ke".
+        terminal_growth: g supuesto, en decimal.
+        scale: Divisor de los importes.
+        unit: Etiqueta de la unidad.
+
+    Returns:
+        Bloque Markdown (vacío si no hay detalle).
+    """
+    if terminal is None:
+        return ""
+    b = terminal.basis
+    flow = "FCFF" if rate_name == "WACC" else "FCFE"
+    multiple_name = "EV/EBITDA" if b.metric_name == "EBITDA" else "P/E"
+    method = terminal.method.value
+    rows: list[list[str]] = [["Método", TERMINAL_LABEL[method]]]
+    if method == "gordon":
+        rows += [
+            ["Fórmula", f"VT = {flow}_N · (1 + g) / ({rate_name} − g)"],
+            [f"{flow}_N ({unit})", amount(b.last_flow, scale)],
+        ]
+    elif method == "gordon_value_driver":
+        ronic = b.ronic
+        rows += [
+            [
+                "Fórmula",
+                f"VT = {b.profit_name}_N · (1 + g) · (1 − g / {b.return_name}) / ({rate_name} − g)",
+            ],
+            [f"{b.profit_name}_N ({unit})", amount(b.profit_last, scale)],
+            [
+                b.return_name,
+                "—" if ronic is None else f"{pct(ronic.value)} ({ronic.source})",
+            ],
+            [
+                f"Reinversión g / {b.return_name}",
+                "—" if ronic is None else pct(terminal_growth / ronic.value),
+            ],
+        ]
+    else:
+        multiple = b.multiple
+        rows += [
+            ["Fórmula", f"VT = M × {b.metric_name}_N ({multiple_name})"],
+            [
+                "Múltiplo M",
+                "—" if multiple is None else f"{num(multiple.value, 2)} ({multiple.source})",
+            ],
+            [f"{b.metric_name}_N ({unit})", amount(b.metric_last, scale)],
+        ]
+    if terminal.next_flow is not None:
+        rows.append([f"Flujo del año N+1 ({unit})", amount(terminal.next_flow, scale)])
+    rows += [
+        [f"**Valor terminal** ({unit})", f"**{amount(terminal.value, scale)}**"],
+        [
+            f"g implícito = ({rate_name} · VT − {flow}_N) / (VT + {flow}_N)",
+            f"{pct(terminal.implied_growth)} (g supuesto {pct(terminal_growth)})",
+        ],
+        [f"{multiple_name} implícito = VT / {b.metric_name}_N", num(terminal.implied_multiple, 2)],
+    ]
+    return "\n### Valor terminal\n\n" + table(["Concepto", "Valor"], rows) + "\n"
+
+
+# Lista de comprobaciones de consistencia (o mensaje de que no hay avisos).
+def checks_block(checks: Sequence[str]) -> str:
+    """Construye la subsección de comprobaciones de consistencia.
+
+    Args:
+        checks: Avisos de flujos históricos y del valor terminal.
+
+    Returns:
+        Bloque Markdown.
+    """
+    body = (
+        "\n".join(f"- ⚠ {c}" for c in checks)
+        if checks
+        else "- Sin avisos: flujos históricos positivos, último año en línea y VT coherente."
+    )
+    return "\n### Comprobaciones de consistencia\n\n" + body + "\n"

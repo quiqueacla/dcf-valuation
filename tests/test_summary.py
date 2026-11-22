@@ -1,7 +1,7 @@
 """Resumen de un lote de tickers en Markdown y CSV (sin red).
 
-Cifras del fixture FCFF (conftest: valor 30,37 €, WACC 8,125 %) y del banco sintético
-FCFE (test_fcfe: 13,80 €, Ke 9 %), calculadas a mano en sus tests.
+Cifras del fixture FCFF_CFO (conftest: valor 30,37 €, WACC 8,125 %, Gordon clásico) y del
+banco sintético FCFE_FIN (test_fcfe_fin: 3,22 €, Ke 9 %), calculadas a mano en sus tests.
 """
 
 import io
@@ -24,10 +24,10 @@ from dcf.reports.summary import (
     summary_frame,
     summary_row,
 )
-from dcf.valuation import fcfe, fcff_cfo
+from dcf.valuation import fcfe_fin, fcff_cfo
 from dcf.valuation.scenarios import ScenarioConfig, ScenarioMode
 from tests.test_cli_options import _fake_fetch
-from tests.test_fcfe import bank  # noqa: F401 (fixture)
+from tests.test_fcfe_fin import bank  # noqa: F401 (fixture)
 from tests.test_report_cli import MARKET, SETTINGS
 
 REL = 1e-9
@@ -51,11 +51,12 @@ def test_fila_fcff(company: Company, market_inputs: MarketInputs) -> None:
 
 
 def test_fila_fcfe(bank: Company, market_inputs: MarketInputs) -> None:  # noqa: F811
-    r = fcfe.value_company(bank, market_inputs, Assumptions(0.02, 2), NOW)
+    r = fcfe_fin.value_company(bank, market_inputs, Assumptions(0.02, 2), NOW)
     row = summary_row(bank, r, "argumento --g")
-    assert (row.model, row.rate_name) == ("fcfe", "Ke")
+    assert (row.model, row.rate_name) == ("fcfe_fin", "Ke")
+    assert row.terminal_method == "gordon"
     assert row.discount_rate == pytest.approx(0.09, rel=REL)
-    assert row.neutral == pytest.approx(13.801305, rel=1e-6)
+    assert row.neutral == pytest.approx(3.220183, rel=1e-6)
     assert row.bearish is None and row.bullish is None  # sin escenarios
     assert row.rate_sources is not None and "Kd" not in row.rate_sources
 
@@ -77,7 +78,7 @@ def test_markdown(company: Company, market_inputs: MarketInputs) -> None:
     md = render_summary(rows, NOW, "0.1.0")
     assert "# Resumen de valoraciones DCF" in md and "no es una recomendación" in md
     assert "Tickers valorados: 1 de 2" in md
-    assert "| **TEST** | Empresa Sintética S.A. | fcff_cfo | 10,00 € |" in md
+    assert "| **TEST** | Empresa Sintética S.A. | fcff_cfo | gordon | 10,00 € |" in md
     assert "**30,37 €** | 203,70 % |" in md
     assert "WACC 8,13 %" in md and "Fuente de g" in md
     assert "## Tickers no valorados" in md and "**MALO**: falta EBIT" in md
@@ -89,7 +90,7 @@ def test_csv_formato_excel_espanol(company: Company, market_inputs: MarketInputs
     rows = [summary_row(company, r, "x"), error_row("MALO", "falta EBIT")]
     text = summary_csv(rows)
     header = text.splitlines()[0].split(CSV_SEPARATOR)
-    assert header[:5] == ["ticker", "empresa", "modelo", "cotizacion_eur", "bajista_eur"]
+    assert header[:6] == ["ticker", "empresa", "modelo", "vt", "cotizacion_eur", "bajista_eur"]
     assert "30,369973" in text  # decimal con coma
     back = pd.read_csv(io.StringIO(text), sep=CSV_SEPARATOR, decimal=CSV_DECIMAL)
     assert back["neutro_eur"].iloc[0] == pytest.approx(30.369973030961113, rel=1e-9)
@@ -116,7 +117,8 @@ def test_cli_guarda_resumen_con_errores(
         encoding="utf-8-sig",
     )
     assert list(df["ticker"]) == ["AAA", "MALO", "BANCO"]
-    assert list(df["modelo"].fillna("")) == ["fcff_cfo", "", "fcfe"]
+    assert list(df["modelo"].fillna("")) == ["fcff", "", "fcfe_fin"]
+    assert list(df["vt"].fillna("")) == ["gordon_value_driver", "", "gordon"]
     assert list(df["tasa"].fillna("")) == ["WACC", "", "Ke"]
     assert set(df["fuente_g"].dropna()) == {"argumento --set"}
     assert "Total Revenue" in df["error"].iloc[1]

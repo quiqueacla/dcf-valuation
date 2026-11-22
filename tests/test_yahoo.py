@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from dcf.company import ValuationModel
 from dcf.data.yahoo import YahooRawData, build_company, load_raw, normalize_price_currency, save_raw
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
@@ -48,6 +49,7 @@ def _raw() -> YahooRawData:
         {
             "Operating Cash Flow": [r * 0.15 for r in REVENUE] + [140.0],
             "Capital Expenditure": [-r * 0.05 for r in REVENUE] + [-45.0],
+            "Depreciation And Amortization": [r * 0.04 for r in REVENUE] + [nan],
             "Issuance Of Debt": [20.0] * 5,
             "Repayment Of Debt": [-15.0] * 5,
         }
@@ -57,6 +59,9 @@ def _raw() -> YahooRawData:
             "Total Debt": [200.0] * 5,
             "Cash Cash Equivalents And Short Term Investments": [100.0] * 5,
             "Stockholders Equity": [610.0, 550.0, 500.0, 460.0, 420.0],
+            "Accounts Receivable": [r * 0.10 for r in REVENUE] + [90.0],
+            "Inventory": [r * 0.05 for r in REVENUE] + [45.0],
+            "Accounts Payable": [r * 0.08 for r in REVENUE] + [70.0],
         }
     )
     estimates = pd.DataFrame(
@@ -139,7 +144,6 @@ def test_emision_ausente_cero_con_aviso() -> None:
         ("income_stmt", "Total Revenue"),
         ("income_stmt", "Diluted Average Shares"),
         ("income_stmt", "Interest Expense"),
-        ("cashflow", "Operating Cash Flow"),
         ("balance_sheet", "Total Debt"),
         ("balance_sheet", "Cash Cash Equivalents And Short Term Investments"),
     ],
@@ -149,6 +153,15 @@ def test_error_si_falta_fila_obligatoria(statement: str, row: str) -> None:
     raw = dataclasses.replace(raw, **{statement: getattr(raw, statement).drop(index=row)})
     with pytest.raises(ValueError, match=row):
         build_company(raw)
+
+
+# El CFO solo es obligatorio en fcff_cfo; fcff (por defecto) parte del EBIT.
+def test_cfo_obligatorio_solo_en_fcff_cfo() -> None:
+    raw = _raw()
+    raw = dataclasses.replace(raw, cashflow=raw.cashflow.drop(index="Operating Cash Flow"))
+    assert build_company(raw).info.valuation_model is ValuationModel.FCFF
+    with pytest.raises(ValueError, match="Operating Cash Flow"):
+        build_company(raw, model=ValuationModel.FCFF_CFO)
 
 
 def test_error_si_falta_dato_de_un_ano() -> None:

@@ -15,6 +15,7 @@ import pandas as pd
 from dcf.company import Company, model_suitability_warning
 from dcf.model.cost_of_equity import CostOfEquityResult, MarketRate
 from dcf.reports.format import DISCLAIMER, eur, num, pct, table
+from dcf.valuation.fcfe_fin_result import FcfeFinValuationResult
 from dcf.valuation.fcfe_result import FcfeValuationResult
 from dcf.valuation.run import AnyValuationResult
 from dcf.valuation.scenarios import ScenarioName
@@ -27,7 +28,8 @@ class SummaryRow:
     Attributes:
         ticker: Símbolo valorado.
         name: Nombre de la empresa; ``None`` si la valoración falló antes de cargarla.
-        model: Modelo usado (fcff o fcfe); ``None`` si falló.
+        model: Modelo usado (fcff, fcff_cfo, fcfe, fcfe_fin); ``None`` si falló.
+        terminal_method: Método de valor terminal (gordon, gordon_value_driver, vt_mult).
         share_price: Cotización en EUR.
         bearish: Valor por acción del escenario bajista, en EUR; ``None`` si no hay
             escenarios o el escenario no es válido.
@@ -45,6 +47,7 @@ class SummaryRow:
     ticker: str
     name: str | None = None
     model: str | None = None
+    terminal_method: str | None = None
     share_price: float | None = None
     bearish: float | None = None
     neutral: float | None = None
@@ -116,7 +119,7 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
 
     choice = result.discount_rate
     sources: str | None = None
-    if isinstance(result, FcfeValuationResult):
+    if isinstance(result, FcfeFinValuationResult | FcfeValuationResult):
         if result.cost_of_equity is not None:
             sources = _rate_sources(result.cost_of_equity, None)
     else:
@@ -137,7 +140,7 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
             else f"calculado {pct(choice.calculated)}: {sources}"
         )
         sources = f"{forced}; {calculated}"
-    warnings += list(result.warnings)
+    warnings += list(result.warnings) + list(result.checks)
 
     by_name = {s.name: s for s in result.scenarios}
     for s in result.scenarios:
@@ -153,6 +156,7 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
         ticker=info.ticker,
         name=info.name,
         model=info.valuation_model.value,
+        terminal_method=None if result.terminal is None else result.terminal.method.value,
         share_price=company.balance.share_price,
         bearish=scenario(ScenarioName.BEARISH),
         neutral=result.value_per_share,
@@ -198,6 +202,7 @@ def render_summary(rows: Sequence[SummaryRow], valuation_date: datetime, code_ve
             f"**{r.ticker}**",
             r.name or "",
             r.model or "",
+            r.terminal_method or "",
             eur(r.share_price),
             eur(r.bearish),
             pct(r.upside(r.bearish)),
@@ -232,6 +237,7 @@ def render_summary(rows: Sequence[SummaryRow], valuation_date: datetime, code_ve
                 "Ticker",
                 "Empresa",
                 "Modelo",
+                "VT",
                 "Cotización",
                 "Bajista",
                 "Margen",
@@ -242,7 +248,7 @@ def render_summary(rows: Sequence[SummaryRow], valuation_date: datetime, code_ve
                 "Avisos",
             ],
             results,
-            text_columns=frozenset({0, 1, 2}),
+            text_columns=frozenset({0, 1, 2, 3}),
         )
         + "\n\n## Supuestos y fuentes\n\n"
         + table(
@@ -284,6 +290,7 @@ def summary_frame(rows: Sequence[SummaryRow]) -> pd.DataFrame:
                 "ticker": r.ticker,
                 "empresa": r.name,
                 "modelo": r.model,
+                "vt": r.terminal_method,
                 "cotizacion_eur": r.share_price,
                 "bajista_eur": r.bearish,
                 "margen_bajista": r.upside(r.bearish),

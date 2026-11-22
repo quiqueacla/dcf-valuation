@@ -2,10 +2,10 @@
 
 Casos calculados a mano (tolerancia relativa 1e-9):
 
-- Banco sintético FCFE (ver test_fcfe) con Ke forzado al 10 %:
-  VT = (133,1 · 1,02 − 0,02 · 1210) / (0,10 − 0,02) = 1394,525;
-  fondos propios = 21 / 1,1 + 23,1 / 1,21 + 1394,525 / 1,21 = 19,0909 + 19,0909 + 1152,5
-  = 1190,6818… → 11,91 € por acción.
+- Banco sintético FCFE_FIN (ver test_fcfe_fin) con Ke forzado al 10 % y Gordon clásico:
+  VT = 23,1 · 1,02 / (0,10 − 0,02) = 294,525;
+  fondos propios = 21 / 1,1 + 23,1 / 1,21 + 294,525 / 1,21 = 19,0909 + 19,0909 + 243,4091
+  = 281,5909… → 2,82 € por acción.
 - Fixture FCFF con WACC forzado al 10 %: los factores de descuento son 1 / 1,1^k.
 """
 
@@ -24,17 +24,17 @@ from dcf.model.discount_rate import choose_discount_rate, rate_warnings
 from dcf.reports.markdown import render_report
 from dcf.reports.summary import summary_row
 from dcf.settings import apply_overrides
-from dcf.valuation import fcfe, fcff_cfo
+from dcf.valuation import fcfe_fin, fcff_cfo
 from dcf.valuation.run import run_valuation
 from tests.test_cli_options import BASE
-from tests.test_fcfe import bank  # noqa: F401 (fixture)
+from tests.test_fcfe_fin import bank  # noqa: F401 (fixture)
 from tests.test_market_inputs import VALID
 from tests.test_report_cli import _files
 
 REL = 1e-9
 NOW = datetime(2026, 11, 21, tzinfo=UTC)
 TEN = MarketRate(0.10, "prueba", NOW)
-BANK_TV = (133.1 * 1.02 - 0.02 * 1210) / (0.10 - 0.02)
+BANK_TV = 23.1 * 1.02 / (0.10 - 0.02)
 BANK_EQUITY = 21 / 1.1 + 23.1 / 1.21 + BANK_TV / 1.21
 
 
@@ -120,11 +120,11 @@ def test_fcfe_con_ke_forzado_calculado_a_mano(
     bank: Company,  # noqa: F811
     market_inputs: MarketInputs,
 ) -> None:
-    r = fcfe.value_company(bank, market_inputs, Assumptions(0.02, 2), NOW, rate_override=TEN)
+    r = fcfe_fin.value_company(bank, market_inputs, Assumptions(0.02, 2), NOW, rate_override=TEN)
     assert r.terminal_value == pytest.approx(BANK_TV, rel=REL)
     assert r.equity_value == pytest.approx(BANK_EQUITY, rel=REL)
-    assert r.equity_value == pytest.approx(1190.681818, rel=1e-6)
-    assert r.value_per_share == pytest.approx(11.90681818, rel=1e-6)
+    assert r.equity_value == pytest.approx(281.590909, rel=1e-6)
+    assert r.value_per_share == pytest.approx(2.81590909, rel=1e-6)
     assert r.cost_of_equity is not None
     assert r.cost_of_equity.cost_of_equity == pytest.approx(0.09, rel=REL)  # informativo
     md = render_report(bank, r, scale=1.0, unit="€")
@@ -136,7 +136,9 @@ def test_fcfe_beta_negativa_con_override(
     market_inputs: MarketInputs,
 ) -> None:
     negative = dataclasses.replace(bank, balance=dataclasses.replace(bank.balance, beta=-0.2))
-    r = fcfe.value_company(negative, market_inputs, Assumptions(0.02, 2), NOW, rate_override=TEN)
+    r = fcfe_fin.value_company(
+        negative, market_inputs, Assumptions(0.02, 2), NOW, rate_override=TEN
+    )
     assert r.cost_of_equity is None
     assert r.equity_value == pytest.approx(BANK_EQUITY, rel=REL)
 

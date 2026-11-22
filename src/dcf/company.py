@@ -32,37 +32,56 @@ class CompanyType(StrEnum):
 
 
 class ValuationModel(StrEnum):
-    """Modelo de valoración (``docs/metodologia.md``)."""
+    """Modelo de valoración: qué flujo se descuenta y a qué tasa (``docs/dcf_metodos.md`` §1)."""
 
+    FCFF = "fcff"
+    """FCFF = EBIT·(1−t) + D&A − Capex − ΔNWC, descontado al WACC (método 1.1)."""
     FCFF_CFO = "fcff_cfo"
-    """FCFF desde el CFO: Net Income × media histórica de FCFF/Net Income, al WACC; puente
-    VE → fondos propios (industriales)."""
+    """FCFF desde el CFO: Net Income × media histórica de FCFF/Net Income, al WACC."""
     FCFE = "fcfe"
-    """Flujo de caja libre para el accionista descontado a Ke (financieras)."""
+    """FCFE = FCFF − Int·(1−t) + ΔDeuda neta, descontado a Ke (método 1.2, industriales)."""
+    FCFE_FIN = "fcfe_fin"
+    """FCFE de financieras: Net Income − reinversión en fondos propios, descontado a Ke."""
+
+
+class TerminalMethod(StrEnum):
+    """Método de valor terminal (``docs/dcf_metodos.md`` §3)."""
+
+    GORDON = "gordon"
+    """Gordon clásico: VT = CF_N · (1 + g) / (r − g)."""
+    VALUE_DRIVER = "gordon_value_driver"
+    """Gordon con value driver: VT = Beneficio_{N+1} · (1 − g / RONIC) / (r − g)."""
+    MULTIPLE = "vt_mult"
+    """Múltiplo de salida: VT = M × EBITDA_N (FCFF) o M × Net Income_N (FCFE)."""
 
 
 # Modelos adecuados para cada tipo de empresa (conocimiento del modelo, no configuración).
 SUITABLE_MODELS: dict[CompanyType, frozenset[ValuationModel]] = {
-    CompanyType.INDUSTRIAL: frozenset({ValuationModel.FCFF_CFO}),
-    CompanyType.BANK: frozenset({ValuationModel.FCFE}),
-    CompanyType.INSURANCE: frozenset({ValuationModel.FCFE}),
+    CompanyType.INDUSTRIAL: frozenset(
+        {ValuationModel.FCFF, ValuationModel.FCFF_CFO, ValuationModel.FCFE}
+    ),
+    CompanyType.BANK: frozenset({ValuationModel.FCFE_FIN}),
+    CompanyType.INSURANCE: frozenset({ValuationModel.FCFE_FIN}),
     CompanyType.REAL_ESTATE: frozenset(),
 }
 
+_BANK_NOTE = (
+    "en un banco la deuda es materia prima del negocio, así que el FCFF, el WACC y la "
+    "variación de deuda no son significativos; usa el modelo fcfe_fin"
+)
+_INSURANCE_NOTE = (
+    "en una aseguradora las primas invertidas y las reservas técnicas hacen que el FCFF "
+    "y la deuda no sean comparables; usa el modelo fcfe_fin"
+)
+_NON_FINANCIAL = (ValuationModel.FCFF, ValuationModel.FCFF_CFO, ValuationModel.FCFE)
+
 # Motivo por el que un modelo no es adecuado para un tipo de empresa.
 UNSUITABLE_NOTES: dict[tuple[CompanyType, ValuationModel], str] = {
-    (CompanyType.BANK, ValuationModel.FCFF_CFO): (
-        "en un banco la deuda es materia prima del negocio, así que el FCFF y el WACC no "
-        "son significativos; usa el modelo fcfe"
-    ),
-    (CompanyType.INSURANCE, ValuationModel.FCFF_CFO): (
-        "en una aseguradora las primas invertidas y las reservas técnicas hacen que el FCFF "
-        "y la deuda no sean comparables; usa el modelo fcfe"
-    ),
-    (CompanyType.INDUSTRIAL, ValuationModel.FCFE): (
-        "el FCFE de este proyecto supone que el crecimiento se financia reteniendo beneficio "
-        "en fondos propios, como en una financiera; en una industrial el FCFF recoge la "
-        "inversión y la deuda"
+    **{(CompanyType.BANK, m): _BANK_NOTE for m in _NON_FINANCIAL},
+    **{(CompanyType.INSURANCE, m): _INSURANCE_NOTE for m in _NON_FINANCIAL},
+    (CompanyType.INDUSTRIAL, ValuationModel.FCFE_FIN): (
+        "el fcfe_fin supone que el crecimiento se financia reteniendo beneficio en fondos "
+        "propios, como en una financiera; en una industrial usa fcff o fcfe"
     ),
 }
 
@@ -74,7 +93,7 @@ REAL_ESTATE_NOTE = (
 
 # Aviso si el modelo aplicado no es adecuado para el tipo de empresa; None si lo es.
 def model_suitability_warning(
-    company_type: CompanyType | None, model: ValuationModel = ValuationModel.FCFF_CFO
+    company_type: CompanyType | None, model: ValuationModel = ValuationModel.FCFF
 ) -> str | None:
     """Explica si el modelo de valoración no es adecuado para el tipo de empresa.
 
@@ -186,8 +205,10 @@ class CompanyInfo:
         company_type: Tipo de empresa a efectos del modelo (industrial, banco,
             aseguradora, inmobiliaria), derivado de sector e industria; ``None`` si no
             se ha clasificado.
-        valuation_model: Modelo de valoración para el que se cargaron los datos (fcff o
-            fcfe): el de la tabla de tipos o el forzado por el usuario.
+        valuation_model: Modelo de valoración para el que se cargaron los datos: el de la
+            tabla de tipos o el forzado por el usuario.
+        terminal_method: Método de valor terminal (gordon, gordon_value_driver o
+            vt_mult): el de la tabla de tipos o el forzado por el usuario.
     """
 
     ticker: str
@@ -203,7 +224,8 @@ class CompanyInfo:
     sector: str | None = None
     industry: str | None = None
     company_type: CompanyType | None = None
-    valuation_model: ValuationModel = ValuationModel.FCFF_CFO
+    valuation_model: ValuationModel = ValuationModel.FCFF
+    terminal_method: TerminalMethod = TerminalMethod.VALUE_DRIVER
 
     # Valida identificación, fechas con zona y coherencia de los tipos de cambio.
     def __post_init__(self) -> None:
@@ -247,6 +269,15 @@ class HistoricalYear:
         stockholders_equity: Fondos propios contables atribuibles a la dominante al
             cierre (patrimonio neto sin minoritarios): el capital que sostiene el
             negocio de una financiera.
+        cash: Caja y equivalentes al cierre del ejercicio (para el capital invertido y la
+            deuda neta históricos).
+        depreciation_amortization: Amortizaciones del ejercicio (D&A), importe positivo:
+            gasto contable sin salida de caja que se suma al NOPAT.
+        receivables: Clientes (cuentas a cobrar comerciales) al cierre.
+        inventory: Existencias al cierre.
+        payables: Proveedores (cuentas a pagar comerciales) al cierre.
+            Clientes + existencias − proveedores es el circulante comercial, que no
+            incluye anticipos de clientes ni otros pasivos no comerciales.
     """
 
     fiscal_year: int
@@ -258,6 +289,11 @@ class HistoricalYear:
     debt_issuance: float | None
     debt_repayment: float | None
     stockholders_equity: float | None = None
+    cash: float | None = None
+    depreciation_amortization: float | None = None
+    receivables: float | None = None
+    inventory: float | None = None
+    payables: float | None = None
 
     # Valida signos: ventas positivas, salidas de caja como importes no negativos.
     def __post_init__(self) -> None:
@@ -269,6 +305,8 @@ class HistoricalYear:
         _if_present(_require_non_negative, "debt_issuance", self.debt_issuance)
         _if_present(_require_non_negative, "debt_repayment", self.debt_repayment)
         _if_present(_require_finite, "stockholders_equity", self.stockholders_equity)
+        for name in ("cash", "depreciation_amortization", "receivables", "inventory", "payables"):
+            _if_present(_require_non_negative, name, getattr(self, name))
 
 
 @dataclass(frozen=True, slots=True)
