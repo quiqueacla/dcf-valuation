@@ -257,6 +257,8 @@ NOPAT_i = EBIT_i · (1 − t), con t la mediana de los tipos efectivos; capital 
 propios − caja al cierre; y ROIC_i = NOPAT_i / capital invertido_{i−1}, con su media (el RONIC
 histórico del value driver, §12). El primer año no tiene ROIC (falta el capital inicial). En
 fcfe_fin se muestra el ROE.
+En fcfe, entre el FCFF y el capital invertido, se muestra el paso al FCFE histórico:
+− intereses · (1 − t), deuda neta (deuda total − caja), + ΔDeuda neta y FCFE_i (§12).
 
 La sección 4 incluye la subsección **Valor terminal** (método, fórmula, datos del año N, VT,
 g implícito y múltiplo implícito) y **Comprobaciones de consistencia** con los avisos de §12.
@@ -282,6 +284,8 @@ su financiación, y el CFO incluye la variación de préstamos y depósitos (SAN
 
 **Ratios históricos:** crecimiento de ventas y margen neto como en §2. Se informa el ROE de
 cada año (Net Income_i / FP_{i−1}), que el modelo no usa para proyectar.
+La tabla de históricos muestra también el FCFE_i = Net Income_i − (FP_i − FP_{i−1}): el
+beneficio que no se retiene en fondos propios (dividendos y recompras netos de emisiones).
 
 **Proyección:** ventas y Net Income exactamente como en §3 (analistas +1/+2, después el
 crecimiento medio; Net Income = ventas × margen medio). Los fondos propios crecen al ritmo de

@@ -159,6 +159,25 @@ def project_fcfe(
     return FcfeProjection(tuple(flows), operating.projection_growth, operating.warnings)
 
 
+# Deuda neta de cada cierre: deuda total − caja.
+def historical_net_debt(company: Company) -> dict[int, float]:
+    """Calcula la deuda neta histórica de cada ejercicio.
+
+    Args:
+        company: Compañía con deuda total (coste de la deuda) y caja de cada ejercicio.
+
+    Returns:
+        Deuda neta = deuda total − caja por ejercicio, en EUR (deuda financiera que queda
+        tras usar toda la caja); se omiten los años sin caja publicada.
+    """
+    debt = {d.fiscal_year: d.total_debt for d in company.debt_cost_data}
+    return {
+        h.fiscal_year: debt[h.fiscal_year] - h.cash
+        for h in company.historicals
+        if h.cash is not None and h.fiscal_year in debt
+    }
+
+
 # FCFE histórico: FCFF_i − Int_i·(1−t) + (DN_i − DN_{i−1}), con DN = deuda total − caja.
 def historical_fcfe(company: Company, ratios: FcffRatios) -> dict[int, float]:
     """Calcula el FCFE histórico con el mismo criterio que la proyección.
@@ -171,11 +190,7 @@ def historical_fcfe(company: Company, ratios: FcffRatios) -> dict[int, float]:
         FCFE por ejercicio desde el segundo; se omiten los años sin caja publicada.
     """
     debt = {d.fiscal_year: d for d in company.debt_cost_data}
-    net_debt = {
-        h.fiscal_year: debt[h.fiscal_year].total_debt - h.cash
-        for h in company.historicals
-        if h.cash is not None and h.fiscal_year in debt
-    }
+    net_debt = historical_net_debt(company)
     result: dict[int, float] = {}
     for prev, curr in zip(company.historicals, company.historicals[1:], strict=False):
         y = curr.fiscal_year

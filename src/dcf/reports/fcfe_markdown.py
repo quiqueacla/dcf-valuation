@@ -7,6 +7,7 @@ Secciones: 1) compañía, 2) Ke y deuda, 3) históricos y proyección (FCFF → 
 from __future__ import annotations
 
 from dcf.company import Company
+from dcf.model.fcfe_projection import historical_fcfe, historical_net_debt
 from dcf.reports.fcff_markdown import fcff_history_rows
 from dcf.reports.format import (
     SOURCE_LABEL,
@@ -56,11 +57,47 @@ def _cost_section(result: FcfeValuationResult, scale: float, unit: str) -> str:
     return text + "\n### 2.2 Deuda\n\n" + table(["Supuesto", "Valor"], debt_rows) + "\n"
 
 
+# Filas del paso FCFF → FCFE histórico, tras el FCFF y antes del capital invertido y el ROIC.
+def _fcfe_history_rows(
+    company: Company, result: FcfeValuationResult, years: list[int], scale: float, unit: str
+) -> list[list[str]]:
+    t = result.ratios.tax_rate
+    interest = {d.fiscal_year: d.interest_expense for d in company.debt_cost_data}
+    net_debt = historical_net_debt(company)
+    change = {
+        y: net_debt[y] - net_debt[prev]
+        for prev, y in zip(years, years[1:], strict=False)
+        if y in net_debt and prev in net_debt
+    }
+    fcfe = historical_fcfe(company, result.ratios)
+    return [
+        [
+            f"− Intereses · (1 − {pct(t)}) ({unit})",
+            *[amount(interest[y] * (1 - t) if y in interest else None, scale) for y in years],
+            "",
+        ],
+        [
+            f"Deuda neta = deuda total − caja ({unit})",
+            *[amount(net_debt.get(y), scale) for y in years],
+            "",
+        ],
+        [f"+ ΔDeuda neta ({unit})", *[amount(change.get(y), scale) for y in years], ""],
+        [
+            f"**FCFE = FCFF − Int.·(1−t) + ΔDeuda neta** ({unit})",
+            *[f"**{amount(fcfe[y], scale)}**" if y in fcfe else "—" for y in years],
+            "",
+        ],
+    ]
+
+
 # Sección 3: históricos del FCFF y proyección FCFF → FCFE.
 def _history_section(company: Company, result: FcfeValuationResult, scale: float, unit: str) -> str:
     years, hist_rows = fcff_history_rows(company, result.ratios, scale, unit)
     flows = [p.flow for p in result.projections]
     t = result.leverage.tax_rate
+    hist_rows = (
+        hist_rows[:-2] + _fcfe_history_rows(company, result, years, scale, unit) + hist_rows[-2:]
+    )
     proj_rows = [
         ["Origen de las ventas", *[SOURCE_LABEL[str(f.operating.revenue_source)] for f in flows]],
         [f"Ventas ({unit})", *[amount(f.operating.revenue, scale) for f in flows]],

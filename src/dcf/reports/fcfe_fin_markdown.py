@@ -27,6 +27,7 @@ from dcf.reports.format import (
     vs_price,
     warnings_block,
 )
+from dcf.valuation.fcfe_fin import historical_fcfe
 from dcf.valuation.fcfe_fin_result import FcfeFinValuationResult
 
 
@@ -56,6 +57,9 @@ def _history_section(
     r = result.ratios
     years = [h.fiscal_year for h in company.historicals]
     by_year = {h.fiscal_year: h for h in company.historicals}
+    fcfe = historical_fcfe(r, company)
+    equity = r.equity_by_year
+    change = {y: equity[y] - equity[prev] for prev, y in zip(years, years[1:], strict=False)}
 
     def row(label: str, values: list[str], mean: str = "") -> list[str]:
         return [label, *values, mean]
@@ -74,6 +78,14 @@ def _history_section(
             pct(r.average_net_margin),
         ),
         row(f"Fondos propios ({unit})", [amount(r.equity_by_year.get(y), scale) for y in years]),
+        row(
+            f"− ΔFondos propios = beneficio retenido ({unit})",
+            [amount(change.get(y), scale) for y in years],
+        ),
+        row(
+            f"**FCFE = Net Income − ΔFondos propios** ({unit})",
+            [f"**{amount(fcfe[y], scale)}**" if y in fcfe else "—" for y in years],
+        ),
         row(
             "ROE = Net Income / FP inicial", [pct(r.return_on_equity_by_year.get(y)) for y in years]
         ),

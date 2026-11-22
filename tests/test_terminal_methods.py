@@ -369,3 +369,25 @@ def test_cli_umbrales(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Non
     path.write_text("[warnings]\nronic_to_rate = -1\n", encoding="utf-8")
     assert cli.main([*_files(tmp_path), "--thresholds", str(path)], now=NOW) != 0
     assert "positivo" in capsys.readouterr().err
+
+
+def test_informe_fcfe_muestra_fcfe_historico(
+    industrial: Company,  # noqa: F811
+    market_inputs: MarketInputs,
+) -> None:
+    # Caja 100 / 80 → deuda neta 100 / 120, ΔDN 2025 = 20; intereses 10 · 0,75 = 7,5;
+    # FCFE 2025 = FCFF 122 − 7,5 + 20 = 134,5.
+    years = tuple(
+        dataclasses.replace(h, cash=cash)
+        for h, cash in zip(industrial.historicals, (100.0, 80.0), strict=True)
+    )
+    company = dataclasses.replace(industrial, historicals=years)
+    r = fcfe.value_company(company, market_inputs, Assumptions(0.02, 2), NOW, None, TEN)
+    md = render_report(company, r, scale=1.0, unit="€")
+    assert "| − Intereses · (1 − 25,00 %) (€) | 7,5 | 7,5 |  |" in md
+    assert "| Deuda neta = deuda total − caja (€) | 100,0 | 120,0 |  |" in md
+    assert "| + ΔDeuda neta (€) | — | 20,0 |  |" in md
+    assert "| **FCFE = FCFF − Int.·(1−t) + ΔDeuda neta** (€) | — | **134,5** |  |" in md
+    start = md.index("### 3.1")
+    order = [md.index(f"| {x}", start) for x in ("FCFF =", "− Intereses", "**FCFE", "ROIC")]
+    assert order == sorted(order)

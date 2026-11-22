@@ -33,6 +33,7 @@ from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs
 from dcf.model.fcfe_fin_projection import compute_fcfe_fin_ratios, project_fcfe_fin
 from dcf.model.terminal_methods import TerminalOptions
+from dcf.reports.format import num
 from dcf.reports.markdown import render_report
 from dcf.valuation.fcfe_fin import value_company
 from dcf.valuation.fcfe_fin_result import FcfeFinValuationResult
@@ -228,3 +229,20 @@ def test_value_driver_con_roe_reproduce_el_vt_anterior(
     assert r.terminal_value == pytest.approx(VD_TV, rel=REL)
     assert r.equity_value == pytest.approx(VD_EQUITY, rel=REL)
     assert r.value_per_share == pytest.approx(13.801305, rel=1e-6)
+
+
+def test_informe_muestra_fcfe_historico(bank: Company, market_inputs: MarketInputs) -> None:
+    r = value_company(bank, market_inputs, Assumptions(G, 2), NOW)
+    md = render_report(bank, r, scale=1.0, unit="€")
+    fcfe = {
+        c.fiscal_year: c.net_income - (c.stockholders_equity - p.stockholders_equity)
+        for p, c in zip(bank.historicals, bank.historicals[1:], strict=False)
+        if c.stockholders_equity is not None and p.stockholders_equity is not None
+    }
+    row = next(line for line in md.splitlines() if line.startswith("| **FCFE = Net Income"))
+    assert row.split(" | ")[1] == "—"  # primer año: sin fondos propios iniciales
+    for value in fcfe.values():
+        assert f"**{num(value, 1)}**" in row
+    start = md.index("### 3.1")
+    order = [md.index(f"| {x}", start) for x in ("Fondos propios (", "− ΔFondos", "**FCFE", "ROE")]
+    assert order == sorted(order)
