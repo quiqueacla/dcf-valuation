@@ -70,23 +70,33 @@ def fcff_history_rows(
         ),
         nopat,
         row(
-            "+ D&A / ventas",
+            f"+ D&A ({unit})",
+            [amount(by_year[y].depreciation_amortization, scale) for y in years],
+        ),
+        row(
+            "D&A / ventas",
             [pct(r.da_to_revenue_by_year.get(y)) for y in years],
             pct(r.average_da_to_revenue),
         ),
+        row(f"− Capex ({unit})", [amount(by_year[y].capital_expenditure, scale) for y in years]),
         row(
-            "− Capex / ventas",
+            "Capex / ventas",
             [pct(r.capex_to_revenue_by_year.get(y)) for y in years],
             pct(r.average_capex_to_revenue),
         ),
         row(
-            f"Circulante comercial = clientes + existencias − proveedores ({unit})",
+            f"Circulante operativo (NWC) = clientes + existencias + otros activos − proveedores − "
+            f"otros pasivos ({unit})",
             [amount(r.nwc_by_year.get(y), scale) for y in years],
         ),
         row(
             "Circulante / ventas",
             [pct(r.nwc_to_revenue_by_year.get(y)) for y in years],
             pct(r.average_nwc_to_revenue),
+        ),
+        row(
+            f"− ΔNWC = variación del circulante ({unit})",
+            [amount(r.nwc_change_by_year.get(y), scale) for y in years],
         ),
         row(
             f"FCFF = EBIT·(1−t) + D&A − Capex − ΔNWC ({unit})",
@@ -124,7 +134,11 @@ def _history_section(company: Company, result: FcffValuationResult, scale: float
             *[amount(f.capital_expenditure, scale) for f in flows],
         ],
         [
-            f"− ΔNWC (NWC = Ventas × {pct(r.average_nwc_to_revenue)}) ({unit})",
+            f"Circulante operativo (NWC) = Ventas × {pct(r.average_nwc_to_revenue)} ({unit})",
+            *[amount(f.nwc, scale) for f in flows],
+        ],
+        [
+            f"− ΔNWC = variación del circulante ({unit})",
             *[amount(f.nwc_change, scale) for f in flows],
         ],
         [f"**FCFF** ({unit})", *[f"**{amount(f.fcff, scale)}**" for f in flows]],
@@ -138,8 +152,9 @@ def _history_section(company: Company, result: FcffValuationResult, scale: float
         + "\n"
         + warnings_block("Años excluidos de alguna media", r.warnings)
         + "\n### 3.2 Proyecciones\n\n"
-        + "El circulante se proyecta como porcentaje medio de las ventas, así que ΔNWC solo "
-        "recoge el crecimiento de las ventas y no los saltos históricos (p. ej. anticipos).\n\n"
+        + "El circulante se proyecta como porcentaje mediano de las ventas. El ΔNWC del primer "
+        "año parte del circulante real del último ejercicio: si estaba por encima de su nivel "
+        "normal, ese año libera caja (y la consume si estaba por debajo).\n\n"
         + f"Crecimiento aplicado a los años sin estimación de analistas: "
         f"**{pct(result.projection_growth)}**.\n\n"
         + table(["Partida", *[f"{f.fiscal_year}e" for f in flows]], proj_rows)

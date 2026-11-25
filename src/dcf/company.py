@@ -285,8 +285,14 @@ class HistoricalYear:
         receivables: Clientes (cuentas a cobrar comerciales) al cierre.
         inventory: Existencias al cierre.
         payables: Proveedores (cuentas a pagar comerciales) al cierre.
-            Clientes + existencias − proveedores es el circulante comercial, que no
-            incluye anticipos de clientes ni otros pasivos no comerciales.
+        other_operating_assets: Otros activos corrientes de la operación al cierre: otras
+            cuentas a cobrar, impuestos a cobrar, gastos anticipados y otros activos
+            corrientes (sin caja, activos financieros ni mantenidos para la venta).
+        other_operating_liabilities: Otros pasivos corrientes de la operación al cierre,
+            sin coste financiero: otras cuentas a pagar, impuestos a pagar, otros pasivos
+            corrientes (donde suelen ir los anticipos de clientes) y provisiones corrientes.
+            Clientes + existencias + otros activos − proveedores − otros pasivos es el
+            circulante operativo (NWC).
     """
 
     fiscal_year: int
@@ -303,6 +309,8 @@ class HistoricalYear:
     receivables: float | None = None
     inventory: float | None = None
     payables: float | None = None
+    other_operating_assets: float | None = None
+    other_operating_liabilities: float | None = None
 
     # Valida signos: ventas positivas, salidas de caja como importes no negativos.
     def __post_init__(self) -> None:
@@ -314,7 +322,15 @@ class HistoricalYear:
         _if_present(_require_non_negative, "debt_issuance", self.debt_issuance)
         _if_present(_require_non_negative, "debt_repayment", self.debt_repayment)
         _if_present(_require_finite, "stockholders_equity", self.stockholders_equity)
-        for name in ("cash", "depreciation_amortization", "receivables", "inventory", "payables"):
+        for name in (
+            "cash",
+            "depreciation_amortization",
+            "receivables",
+            "inventory",
+            "payables",
+            "other_operating_assets",
+            "other_operating_liabilities",
+        ):
             _if_present(_require_non_negative, name, getattr(self, name))
 
 

@@ -37,11 +37,15 @@ class FcffRatios:
             antes de intereses e impuestos por cada euro vendido.
         da_to_revenue_by_year: Amortizaciones / ventas.
         capex_to_revenue_by_year: Inversión en activo fijo / ventas.
-        nwc_by_year: Circulante comercial (clientes + existencias − proveedores). Negativo si
-            los proveedores financian más que clientes y existencias.
-        nwc_to_revenue_by_year: Circulante comercial / ventas.
-        fcff_by_year: FCFF histórico con el mismo criterio (desde el segundo ejercicio, que
-            ya tiene ΔNWC): EBIT·(1−t) + D&A − Capex − ΔNWC.
+        nwc_by_year: Circulante operativo al cierre (clientes + existencias + otros activos
+            operativos − proveedores − otros pasivos operativos): lo que la empresa tiene
+            invertido en su ciclo de explotación. Negativo si los pasivos de la operación
+            (proveedores, anticipos de clientes) financian más que los activos.
+        nwc_to_revenue_by_year: Circulante operativo / ventas.
+        nwc_change_by_year: Inversión en circulante de cada ejercicio, ΔNWC = NWC_i −
+            NWC_{i−1} del balance (positiva si consume caja), desde el segundo ejercicio.
+        fcff_by_year: FCFF histórico con el mismo criterio: EBIT·(1−t) + D&A − Capex − ΔNWC,
+            desde el segundo ejercicio.
         taxes: Tipos efectivos por año y su mediana (t del NOPAT).
         average_revenue_growth: Mediana de los crecimientos históricos.
         average_net_margin: Mediana de los márgenes netos (para el Net Income informativo).
@@ -59,6 +63,7 @@ class FcffRatios:
     capex_to_revenue_by_year: dict[int, float]
     nwc_by_year: dict[int, float]
     nwc_to_revenue_by_year: dict[int, float]
+    nwc_change_by_year: dict[int, float]
     fcff_by_year: dict[int, float]
     taxes: TaxRates
     average_revenue_growth: float
@@ -124,9 +129,13 @@ class FcffProjection:
     warnings: tuple[str, ...] = ()
 
 
-# Circulante comercial de un ejercicio: clientes + existencias − proveedores.
+# Circulante operativo de un ejercicio: clientes + existencias + otros − proveedores − otros.
 def trade_working_capital(year: HistoricalYear) -> float:
-    """Calcula el circulante comercial (NWC) de un ejercicio.
+    """Calcula el circulante operativo (NWC) de un ejercicio.
+
+    NWC = clientes + existencias + otros activos operativos − proveedores − otros pasivos
+    operativos (anticipos de clientes, impuestos, provisiones corrientes). Los «otros» que
+    no se publican cuentan 0.
 
     Args:
         year: Ejercicio con clientes, existencias y proveedores.
@@ -141,7 +150,9 @@ def trade_working_capital(year: HistoricalYear) -> float:
     return (
         required(year.receivables, f"los clientes de {label}", FCFF)
         + required(year.inventory, f"las existencias de {label}", FCFF)
+        + (year.other_operating_assets or 0.0)
         - required(year.payables, f"los proveedores de {label}", FCFF)
+        - (year.other_operating_liabilities or 0.0)
     )
 
 
@@ -181,12 +192,18 @@ def compute_fcff_ratios(company: Company) -> FcffRatios:
         nwc_ratio[y] = nwc[y] / h.revenue
 
     t = taxes.median
-    fcff = {
-        curr.fiscal_year: ebit_by_year[curr.fiscal_year] * (1.0 - t)
-        + da_ratio[curr.fiscal_year] * curr.revenue
-        - capex_ratio[curr.fiscal_year] * curr.revenue
-        - (nwc[curr.fiscal_year] - nwc[prev.fiscal_year])
+    # ΔNWC = variación del circulante operativo del balance (cálculo estándar del FCFF).
+    nwc_change = {
+        curr.fiscal_year: nwc[curr.fiscal_year] - nwc[prev.fiscal_year]
         for prev, curr in zip(company.historicals, company.historicals[1:], strict=False)
+    }
+    fcff = {
+        h.fiscal_year: ebit_by_year[h.fiscal_year] * (1.0 - t)
+        + da_ratio[h.fiscal_year] * h.revenue
+        - capex_ratio[h.fiscal_year] * h.revenue
+        - nwc_change[h.fiscal_year]
+        for h in company.historicals
+        if h.fiscal_year in nwc_change
     }
     growth = revenue_growth_by_year(company.historicals)
     margin = net_margin_by_year(company.historicals)
@@ -203,6 +220,7 @@ def compute_fcff_ratios(company: Company) -> FcffRatios:
         capex_to_revenue_by_year=capex_ratio,
         nwc_by_year=nwc,
         nwc_to_revenue_by_year=nwc_ratio,
+        nwc_change_by_year=nwc_change,
         fcff_by_year=fcff,
         taxes=taxes,
         average_revenue_growth=mean(growth),
@@ -225,9 +243,11 @@ def project_fcff(
     """Proyecta los FCFF del horizonte explícito desde el EBIT.
 
     Las ventas salen de :func:`project_revenue` (analistas +1/+2, después el crecimiento
-    medio). El circulante de partida es NWC/ventas medio × ventas del último ejercicio,
-    de modo que ΔNWC_t = NWC/ventas medio × (ventas_t − ventas_{t−1}) y los saltos
-    históricos del circulante (p. ej. anticipos de obra) no se extrapolan.
+    medio). NWC_t = ventas_t × NWC/ventas (mediana) y el circulante de partida es el real
+    del último ejercicio, así que ΔNWC del primer año proyectado = NWC_1 − NWC del último
+    histórico: si ese año el circulante estaba por encima (o por debajo) de su nivel
+    normal, el primer año libera (o consume) la diferencia. Desde el segundo año,
+    ΔNWC_t = NWC/ventas × (ventas_t − ventas_{t−1}).
 
     Args:
         company: Compañía con históricos y, opcionalmente, estimaciones de ventas.
@@ -249,7 +269,8 @@ def project_fcff(
         estimate_case,
     )
     t = ratios.tax_rate
-    nwc_prev = ratios.average_nwc_to_revenue * company.historicals[-1].revenue
+    # Circulante real del último ejercicio (punto de partida del ΔNWC del año +1).
+    nwc_prev = ratios.nwc_by_year[company.historicals[-1].fiscal_year]
     flows: list[FcffFlow] = []
     for y in revenue.years:
         ebit = y.revenue * ratios.average_ebit_margin

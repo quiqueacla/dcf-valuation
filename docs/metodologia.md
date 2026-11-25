@@ -70,6 +70,8 @@ cotización; el resto se carga si está (`None` si no).
 | Clientes | Accounts Receivable | balance_sheet | Obligatorio en fcff y fcfe |
 | Existencias | Inventory | balance_sheet | 0 con aviso si falta (empresas sin existencias) |
 | Proveedores | Accounts Payable | balance_sheet | Obligatorio en fcff y fcfe |
+| Otros activos operativos | Other Receivables, Taxes Receivable (solo si hay Accounts Receivable), Prepaid Assets, Other Current Assets | balance_sheet | 0 con aviso cada fila que falte |
+| Otros pasivos operativos | Other Payable, Total Tax Payable, Other Current Liabilities, Current Provisions | balance_sheet | 0 con aviso cada fila que falte |
 | Capex | Capital Expenditure | cashflow | Obligatorio, valor absoluto |
 | Emisión de deuda | Issuance Of Debt | cashflow | 0 con aviso si falta |
 | Reembolso de deuda | Repayment Of Debt | cashflow | 0 con aviso si falta, valor absoluto |
@@ -151,7 +153,7 @@ WACC = E/(D+E) · Ke + D/(D+E) · Kd · (1 − t)
 | rf | Rentabilidad libre de riesgo | `config/data/market_inputs.toml` (valor, fuente y fecha que introduce el usuario) |
 | PRM | Prima de riesgo de mercado | `config/data/market_inputs.toml` |
 | β | Beta de la acción | Según `[beta].mode` de `market_inputs.toml` (ver abajo). Por defecto bottom-up: beta sectorial reapalancada o, sin ella, la de Yahoo ajustada por Blume |
-| Ke | máx(CAPM, suelo): CAPM = rf + β · PRM; suelo = rf + PRM + prima de riesgo país | Prima país en `[country_risk_premium."PAÍS"]` de `market_inputs.toml` |
+| Ke | máx(CAPM, suelo): CAPM = rf + β · PRM + CRP; suelo = rf + PRM + CRP (manda si β < 1) | PRM de mercado maduro; prima de riesgo país CRP en `[country_risk_premium."PAÍS"]` de `market_inputs.toml` (Damodaran) |
 | Kd | Media de los Kd_i = Intereses_i / Deuda total_i | Históricos. Se excluyen años con deuda 0. Años sin intereses publicados: Kd_i = `[default_cost_of_debt]` |
 | t | **Mediana** de los t_i = Provisión_i / BAI_i válidos | Históricos (mismos criterios de exclusión que §2). La mediana evita que un año anómalo (SCYR.MC 2023: 91,6 %) distorsione el ahorro fiscal |
 | E | Cotización × acciones diluidas (valor de mercado) | Último dato |
@@ -182,17 +184,19 @@ Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita 
 - El informe muestra la beta publicada por Yahoo y la utilizada, con fuente, fecha, modo y,
   si se usa una de respaldo, el motivo.
 
-**Suelo de Ke por riesgo país.** Ke = máx(rf + β · PRM, rf + 1 · PRM + CRP), con CRP la
-prima de riesgo país del país de la sede (`info.country` de Yahoo, p. ej. "Spain") en
-`[country_risk_premium."Spain"]` de `market_inputs.toml` (value ≥ 0, source, date). Ninguna
-acción se descuenta a menos que el mercado de su país. Si Yahoo no publica el país o falta
-su prima, error (para un país sin prima, value = 0). Se aplica al Ke de los cuatro
-modelos (en los FCFF, dentro del WACC); con tasa de descuento forzada no se aplica.
+**Prima de riesgo país y suelo de Ke.** Ke = máx(rf + β · PRM + CRP, rf + 1 · PRM + CRP),
+con PRM la prima de un **mercado maduro** (Damodaran: la «Equity Risk Premium» de un país
+Aaa, 4,23 % en enero de 2026) y CRP la «Country Risk Premium» del país de la sede
+(`info.country` de Yahoo, p. ej. "Spain" 1,55 %) en `[country_risk_premium."Spain"]` de
+`market_inputs.toml` (value ≥ 0, source, date). La prima país se suma al CAPM sin
+multiplicarla por la beta (enfoque de Damodaran) y el suelo hace que ninguna acción se
+descuente a menos que el mercado de su país (manda cuando β < 1). Si Yahoo no publica el
+país o falta su prima, error (para un país sin prima, value = 0). Se aplica al Ke de los
+cuatro modelos (en los FCFF, dentro del WACC); con tasa de descuento forzada no se aplica.
 
-- **Cuidado con la doble cuenta:** si la PRM ya es la prima total de un país (p. ej. la
-  «Total Equity Risk Premium» de Damodaran para España, que suma la madura y la del país),
-  la prima país del fichero debe ser 0; si la PRM es la de un mercado maduro, la prima país
-  es la «Country Risk Premium».
+- **No cuentes la prima país dos veces:** la PRM del fichero debe ser la de mercado maduro.
+  Si fuera la prima total de un país (madura + país, la «Total Equity Risk Premium» de
+  Damodaran), su prima país ya estaría dentro.
 
 **Tasa de descuento forzada** (WACC en FCFF, Ke en FCFE). Precedencia:
 
@@ -367,16 +371,29 @@ FCFF = EBIT · (1 − t) + D&A − Capex − ΔNWC
 **Ratios históricos** (medianas de los 4 años, como t; §2):
 
 - Margen EBIT = EBIT_i / Ventas_i; D&A / ventas; Capex / ventas.
-- Circulante comercial NWC_i = clientes_i + existencias_i − proveedores_i; NWC / ventas.
+- Circulante **operativo** NWC_i = clientes_i + existencias_i + otros activos operativos_i −
+  proveedores_i − otros pasivos operativos_i (§1); NWC / ventas. Es el circulante de la
+  literatura (McKinsey, Damodaran): todos los activos y pasivos corrientes de la explotación
+  sin coste financiero, incluidos los anticipos de clientes (Yahoo no los separa: suelen ir en
+  «Other Current Liabilities» u «Other Payable»). No incluye caja, deuda, activos financieros,
+  coberturas ni activos mantenidos para la venta.
 - t = mediana de los tipos efectivos (§4).
-- FCFF histórico_i = EBIT_i · (1 − t) + D&A_i − Capex_i − (NWC_i − NWC_{i−1}), desde el
-  segundo año.
+- ΔNWC histórico_i = NWC_i − NWC_{i−1} del balance (cálculo estándar del FCFF), desde el
+  segundo año. Limitación: la variación del balance incluye el circulante de las empresas
+  adquiridas o vendidas y el efecto del tipo de cambio (IDR.MC 2025: +777 M€, frente a una
+  inversión en circulante de −63 M€ en el estado de flujos), lo que puede dar un FCFF
+  histórico negativo en años de adquisiciones.
+- FCFF histórico_i = EBIT_i · (1 − t) + D&A_i − Capex_i − ΔNWC_i, desde el segundo año.
 
 **Proyección:** ventas como en §3. Para cada año t:
 
 - NOPAT_t = Ventas_t · margen EBIT · (1 − t)
 - D&A_t = Ventas_t · D&A/ventas; Capex_t = Ventas_t · Capex/ventas
-- NWC_t = Ventas_t · NWC/ventas; ΔNWC_t = NWC_t − NWC_{t−1}, con NWC_0 el último histórico.
+- NWC_t = Ventas_t · NWC/ventas; ΔNWC_t = NWC_t − NWC_{t−1}, con NWC_0 el circulante real del
+  último ejercicio. El primer año recoge, además del crecimiento, la vuelta del circulante a su
+  nivel normal (NWC/ventas mediano): si el último año estaba alto, libera caja; si estaba bajo,
+  la consume. Desde el segundo año, ΔNWC_t = NWC/ventas · (Ventas_t − Ventas_{t−1}). El informe
+  muestra NWC_t y ΔNWC_t de cada año proyectado.
   Un NWC negativo (proveedores > clientes + existencias) genera caja al crecer.
 - FCFF_t = NOPAT_t + D&A_t − Capex_t − ΔNWC_t
 

@@ -259,7 +259,7 @@ def cost_of_equity_rows(equity: CostOfEquityResult) -> list[list[str]]:
     crp = floor.country_risk_premium
     capm = equity.capm if equity.capm is not None else equity.cost_of_equity
     rows += [
-        ["Ke por CAPM = rf + β · PRM", pct(capm), "CAPM"],
+        ["Ke por CAPM = rf + β · PRM + prima país", pct(capm), "CAPM con prima país"],
         [
             f"Prima de riesgo país ({floor.country})",
             pct(crp.value),

@@ -123,21 +123,25 @@ value = 0.027             # en decimal: 0.027 = 2,7 %
 source = "BCE, curva de tipos AAA a 10 años"
 date = 2026-11-20
 
-[market_risk_premium]     # prima de riesgo de mercado, p. ej. la implícita de Damodaran
-value = 0.045
-source = "Damodaran, ERP implícita"
-date = 2026-11-01
+[market_risk_premium]     # prima de un mercado MADURO (p. ej. Damodaran, país Aaa)
+value = 0.0423
+source = "Damodaran, ctryprem: Equity Risk Premium de un país Aaa"
+date = 2026-01-05
 ```
 
 Y la **prima de riesgo país** de cada país de las empresas que valores (el país de la sede
-según Yahoo, en inglés), que fija el suelo de Ke = rf + PRM + prima país:
+según Yahoo, en inglés). Se suma al CAPM y fija el suelo de Ke:
+Ke = máx(rf + β · PRM + prima país, rf + PRM + prima país).
 
 ```toml
 [country_risk_premium."Spain"]
-value = 0.0               # 0 si la PRM de arriba ya es la total del país (no la cuentes dos veces)
-source = "Damodaran, ctryprem: ya incluida en la PRM de España"
-date = 2026-11-20
+value = 0.0155            # «Country Risk Premium» de Damodaran
+source = "Damodaran, ctryprem: Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
 ```
+
+Las primas de todos los países están en la tabla de Damodaran (ctryprem). No uses como PRM la
+prima total de un país («Total Equity Risk Premium»): contarías su prima país dos veces.
 
 Las cifras de este ejemplo son ilustrativas: pon las tuyas con su fuente y su fecha, que
 aparecerán en el informe. Sin la prima del país de una empresa, su valoración da error.
@@ -334,7 +338,7 @@ Cada dato lleva `value`, `source` y `date`, que se muestran en el informe. Secci
 | `[risk_free_rate]` | Sí | Rentabilidad libre de riesgo (CAPM y límite de g) | §4 |
 | `[market_risk_premium]` | Sí | Prima de riesgo de mercado (CAPM) | §4 |
 | `[default_cost_of_debt]` | No | Coste de la deuda para estimar los intereses cuando Yahoo no los publica | §1 |
-| `[country_risk_premium."PAÍS"]` | Sí, por país | Prima de riesgo país del suelo de Ke | §4 |
+| `[country_risk_premium."PAÍS"]` | Sí, por país | Prima de riesgo país: se suma al CAPM y fija el suelo de Ke | §4 |
 | `[sector_beta."CLAVE"]` | No | Beta desapalancada por industria o sector (modo `bottom-up`) | §4 |
 | `[beta]` y `[beta."TICKER"]` | No | Cómo se elige la beta (`mode`) y beta propia general o por ticker | §4 |
 | `[discount_rate."TICKER"]` | No | Fuerza el WACC o Ke de un ticker | §4 |
@@ -377,7 +381,8 @@ source = "Damodaran, Unlevered beta, Engineering/Construction (Europa)"
 date = 2026-01-05
 ```
 
-Ke nunca baja del **suelo** rf + PRM + prima país del país de la empresa (metodología §4).
+Ke = rf + β · PRM + prima país y nunca baja del **suelo** rf + PRM + prima país del país de
+la empresa (metodología §4).
 
 Las cifras son ilustrativas. **Precedencia** de los datos forzables (tasa, múltiplo, RONIC):
 argumento `--set` (todos los tickers) > sección del ticker en este fichero > calculado

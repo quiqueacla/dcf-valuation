@@ -11,7 +11,8 @@
 # date = AAAA-MM-DD
 
 [market_risk_premium]
-# Prima de riesgo de mercado, p. ej. la implícita publicada por Damodaran.
+# Prima de un mercado MADURO (p. ej. la «Equity Risk Premium» de un país Aaa de Damodaran).
+# La prima de cada país va aparte, en [country_risk_premium].
 #https://pages.stern.nyu.edu/adamodar/New_Home_Page/datafile/ctryprem.html
 # value =
 # source = ""
@@ -26,11 +27,10 @@
 # source = ""
 # date = AAAA-MM-DD
 
-# OBLIGATORIO por país. Prima de riesgo país del suelo de Ke: Ke >= rf + PRM + prima país.
+# OBLIGATORIO por país. Prima de riesgo país (la «Country Risk Premium» de Damodaran):
+# Ke = máx(rf + β · PRM + prima país, rf + PRM + prima país).
 # La clave es el país de la sede según Yahoo (info["country"], en inglés: "Spain",
 # "United States", "Germany"...). value = 0 si el país no tiene prima.
-# Cuidado: si market_risk_premium ya es la prima total del país (p. ej. la "Total Equity
-# Risk Premium" de Damodaran para España), pon aquí 0 para no contarla dos veces.
 # https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ctryprem.html
 # [country_risk_premium."Spain"]
 # value =

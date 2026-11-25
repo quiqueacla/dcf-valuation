@@ -451,7 +451,7 @@ class CostOfEquityResult:
         cost_of_equity: Ke utilizado: el mayor entre el CAPM y el suelo; rentabilidad
             que exige el accionista.
         warnings: Avisos (p. ej. se usa la beta de respaldo, o se aplica el suelo).
-        capm: Ke por CAPM, rf + β · PRM, antes del suelo; ``None`` = igual a
+        capm: Ke por CAPM, rf + β · PRM + prima país, antes del suelo; ``None`` = igual a
             ``cost_of_equity`` (resultados construidos sin suelo).
         floor: Suelo de Ke por riesgo país; ``None`` si no se calculó.
     """
@@ -474,7 +474,8 @@ class CostOfEquityResult:
 def compute_cost_of_equity(company: Company, market_inputs: MarketInputs) -> CostOfEquityResult:
     """Calcula el coste de los fondos propios de la compañía.
 
-    Ke = max(rf + β · PRM, suelo), con el suelo rf + 1 · PRM + prima de riesgo país.
+    Ke = max(rf + β · PRM + CRP, suelo), con CRP la prima de riesgo país y el suelo
+    rf + 1 · PRM + CRP (manda cuando β < 1). PRM es la de un mercado maduro.
 
     Args:
         company: Compañía con la beta publicada por la fuente (si la hay), su país y sus
@@ -503,10 +504,16 @@ def compute_cost_of_equity(company: Company, market_inputs: MarketInputs) -> Cos
     warnings: list[str] = []
     if choice.reason is not None:
         warnings.append(f"Beta de respaldo ({choice.value:.3f}, {choice.source}): {choice.reason}")
-    capm = cost_of_equity(
-        market_inputs.risk_free_rate.value, choice.value, market_inputs.market_risk_premium.value
-    )
     floor = cost_of_equity_floor(company, market_inputs)
+    # CAPM con prima país (Damodaran): rf + β · PRM madura + prima de riesgo país.
+    capm = (
+        cost_of_equity(
+            market_inputs.risk_free_rate.value,
+            choice.value,
+            market_inputs.market_risk_premium.value,
+        )
+        + floor.country_risk_premium.value
+    )
     if floor.value > capm:
         warnings.append(
             f"Ke por CAPM ({capm:.2%}) por debajo del suelo de {floor.country} ({floor.value:.2%} "

@@ -300,3 +300,15 @@ def test_kd_por_defecto_no_se_usa_si_hay_intereses() -> None:
     c = build_company(_raw(), KD_DEFAULT)
     assert all(h.interest_expense == pytest.approx(10.0 * FX, rel=REL) for h in c.historicals)
     assert not any("Interest Expense" in w for w in c.info.data_warnings)
+
+
+def test_carga_circulante_operativo() -> None:
+    raw = _raw()
+    balance = raw.balance_sheet.copy()
+    balance.loc["Prepaid Assets"] = [5.0] * 5
+    balance.loc["Other Current Liabilities"] = [30.0] * 5
+    c = build_company(dataclasses.replace(raw, balance_sheet=balance))
+    last = c.historicals[-1]
+    assert last.other_operating_assets == pytest.approx(5.0 * FX)
+    assert last.other_operating_liabilities == pytest.approx(30.0 * FX)
+    assert any("Circulante operativo" in w and "Other Payable" in w for w in c.info.data_warnings)

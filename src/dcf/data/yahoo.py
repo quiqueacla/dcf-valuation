@@ -72,6 +72,16 @@ ROWS_DA_CASHFLOW = ("Depreciation And Amortization", "Depreciation Amortization 
 ROWS_DA_INCOME = ("Reconciled Depreciation",)
 ROWS_RECEIVABLES = ("Accounts Receivable", "Receivables")
 ROWS_PAYABLES = ("Accounts Payable",)
+ROWS_OTHER_RECEIVABLES = ("Other Receivables", "Taxes Receivable")
+"""Otras cuentas a cobrar; ya van dentro de «Receivables» si se usa esa fila."""
+ROWS_OTHER_OPERATING_ASSETS = ("Prepaid Assets", "Other Current Assets")
+ROWS_OTHER_OPERATING_LIABILITIES = (
+    "Other Payable",
+    "Total Tax Payable",
+    "Other Current Liabilities",
+    "Current Provisions",
+)
+"""Pasivos corrientes de la operación sin coste financiero (anticipos, impuestos, provisiones)."""
 
 # Periodos de revenue_estimate: ejercicio en curso (+1) y siguiente (+2).
 ESTIMATE_PERIODS = ("0y", "+1y")
@@ -425,7 +435,7 @@ def _first_cell(df: pd.DataFrame, rows: Sequence[str], column: pd.Timestamp) -> 
     return None
 
 
-# Caja, D&A y circulante comercial; D&A, clientes y proveedores obligatorios si se piden.
+# Caja, D&A y circulante operativo; D&A, clientes y proveedores obligatorios si se piden.
 def _operating_items(
     raw: YahooRawData, column: pd.Timestamp, fx: float, required: bool, warnings: list[str]
 ) -> dict[str, float | None]:
@@ -450,6 +460,30 @@ def _operating_items(
         warnings.append(f"'{ROW_INVENTORY}' ausente en {BALANCE} ({column.date()}): se usa 0")
         inventory = 0.0
     result["inventory"] = None if inventory is None else abs(inventory) * fx
+
+    # Resto del circulante operativo: filas opcionales, 0 con aviso si faltan.
+    bs = raw.balance_sheet
+    with_detail = _cell(bs, ROWS_RECEIVABLES[0], column) is not None
+    asset_rows = (ROWS_OTHER_RECEIVABLES if with_detail else ()) + ROWS_OTHER_OPERATING_ASSETS
+    missing: list[str] = []
+
+    def total(rows: Sequence[str]) -> float:
+        amount = 0.0
+        for row in rows:
+            value = _cell(bs, row, column)
+            if value is None:
+                missing.append(row)
+            else:
+                amount += abs(value)
+        return amount * fx
+
+    result["other_operating_assets"] = total(asset_rows)
+    result["other_operating_liabilities"] = total(ROWS_OTHER_OPERATING_LIABILITIES)
+    if missing and required:
+        warnings.append(
+            f"Circulante operativo ({column.date()}): Yahoo no publica {', '.join(missing)}; "
+            "se usan 0"
+        )
     return result
 
 

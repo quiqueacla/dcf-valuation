@@ -38,7 +38,11 @@ from dcf.company import (
 )
 from dcf.model.assumptions import Assumptions
 from dcf.model.cost_of_equity import MarketInputs, MarketRate
-from dcf.model.fcff_projection import compute_fcff_ratios, project_fcff
+from dcf.model.fcff_projection import (
+    compute_fcff_ratios,
+    project_fcff,
+    trade_working_capital,
+)
 from dcf.model.terminal_methods import TerminalOptions
 from dcf.model.wacc import compute_wacc
 from dcf.reports.format import eur
@@ -190,7 +194,10 @@ def test_informe(industrial: Company, market_inputs: MarketInputs) -> None:
     assert "### Valor terminal" in md and "| 1.882,2 |" in md
     assert "### Comprobaciones de consistencia" in md
     assert "# Valoración DCF (FCFF): Industrial Sintética S.A. (IND)" in md
-    assert "Circulante comercial = clientes + existencias − proveedores" in md
+    assert "Circulante operativo (NWC) = clientes + existencias + otros activos" in md
+    # Proyección: NWC = 10 % de 1210 / 1331 → 121 / 133,1; ΔNWC 11 / 12,1.
+    assert "| Circulante operativo (NWC) = Ventas × 10,00 % (€) | 121,0 | 133,1 |" in md
+    assert "| − ΔNWC = variación del circulante (€) | 11,0 | 12,1 |" in md  # proyección
     assert "NOPAT = EBIT × (1 − 25,00 %)" in md
     assert "**134,2**" in md and "**147,6**" in md
     assert f"**Valor intrínseco por acción** | **{eur(r.value_per_share)}**" in md
@@ -311,10 +318,65 @@ def test_historicos_en_cascada(
     from dcf.valuation import fcff_cfo
 
     md = render_report(industrial, _value(industrial, market_inputs), 1.0, "€")
-    labels = ["Ventas", "EBIT (", "t efectivo", "NOPAT", "+ D&A", "− Capex", "FCFF =", "ROIC"]
+    labels = ["Ventas", "EBIT (", "t efectivo", "NOPAT", "+ D&A (", "D&A / ventas", "− Capex ("]
+    labels += ["Capex / ventas", "FCFF =", "ROIC"]
     assert _order(md, labels) == sorted(_order(md, labels))
     r = fcff_cfo.value_company(company, market_inputs, Assumptions(G), NOW)
     md = render_report(company, r, 1.0, "€")
     labels = ["Ventas", "EBIT (", "− Intereses", "t efectivo", "NOPAT", "Net Income (", "CFO"]
     labels += ["− Capex", "FCFF =", "FCFF / Net Income", "Capital invertido", "ROIC"]
     assert _order(md, labels) == sorted(_order(md, labels))
+
+
+def test_historicos_con_da_y_capex_en_importe(
+    industrial: Company, market_inputs: MarketInputs
+) -> None:
+    # D&A 5 % y Capex 8 % de las ventas 1000 / 1100.
+    md = render_report(industrial, _value(industrial, market_inputs), 1.0, "€")
+    assert "| + D&A (€) | 50,0 | 55,0 |  |" in md
+    assert "| D&A / ventas | 5,00 % | 5,00 % | 5,00 % |" in md
+    assert "| − Capex (€) | 80,0 | 88,0 |  |" in md
+    assert "| Capex / ventas | 8,00 % | 8,00 % | 8,00 % |" in md
+    # Circulante 100 / 110: ΔNWC 2025 = 10; FCFF 2025 = 165 + 55 − 88 − 10 = 122.
+    assert "| − ΔNWC = variación del circulante (€) | — | 10,0 |  |" in md
+
+
+def test_primer_delta_nwc_parte_del_circulante_real(
+    industrial: Company, market_inputs: MarketInputs
+) -> None:
+    # Circulante real 2025 = 150 (por encima del 10 % de 1100 = 110): NWC/ventas mediano
+    # (100/1000, 150/1100) = (10 % + 13,636 %) / 2 = 11,818 %; NWC 2026 = 1210 · 11,818 %
+    # = 143 → ΔNWC 2026 = 143 − 150 = −7 (libera caja); 2027: 11,818 % · 121 = 14,3.
+    last = dataclasses.replace(industrial.historicals[1], receivables=1100 * 0.10 + 40)
+    company = dataclasses.replace(industrial, historicals=(industrial.historicals[0], last))
+    ratios = compute_fcff_ratios(company)
+    assert ratios.nwc_by_year[2025] == pytest.approx(150.0, rel=REL)
+    ratio = (0.10 + 150 / 1100) / 2
+    flows = project_fcff(company, ratios, 2).flows
+    assert flows[0].nwc == pytest.approx(1210 * ratio, rel=REL)
+    assert flows[0].nwc_change == pytest.approx(1210 * ratio - 150, rel=REL)
+    assert flows[0].nwc_change == pytest.approx(-7.0, rel=REL)
+    assert flows[1].nwc_change == pytest.approx(121 * ratio, rel=REL)
+
+
+def test_circulante_operativo_incluye_otros_activos_y_pasivos(industrial: Company) -> None:
+    # 2025: clientes 110 + existencias 55 + otros activos 20 − proveedores 55 − otros
+    # pasivos (anticipos) 70 = 60.
+    last = dataclasses.replace(
+        industrial.historicals[1], other_operating_assets=20.0, other_operating_liabilities=70.0
+    )
+    assert trade_working_capital(last) == pytest.approx(60.0, rel=REL)
+    assert trade_working_capital(industrial.historicals[1]) == pytest.approx(110.0, rel=REL)
+
+
+def test_delta_nwc_historico_es_la_variacion_del_balance(industrial: Company) -> None:
+    # 2025: NWC operativo 110 + otros activos 20 − otros pasivos 70 = 60, frente a 100 en
+    # 2024 → ΔNWC = −40 (libera caja); FCFF 2025 = 165 + 55 − 88 + 40 = 172.
+    last = dataclasses.replace(
+        industrial.historicals[1], other_operating_assets=20.0, other_operating_liabilities=70.0
+    )
+    r = compute_fcff_ratios(
+        dataclasses.replace(industrial, historicals=(industrial.historicals[0], last))
+    )
+    assert r.nwc_change_by_year == {2025: pytest.approx(-40.0, rel=REL)}
+    assert r.fcff_by_year == {2025: pytest.approx(172.0, rel=REL)}

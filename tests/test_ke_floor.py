@@ -140,6 +140,15 @@ def test_suelo_de_ke(company: Company, market_inputs: MarketInputs) -> None:
     assert compute_cost_of_equity(c, m).cost_of_equity == pytest.approx(0.09, rel=REL)
 
 
+def test_prima_pais_entra_en_el_capm(company: Company, market_inputs: MarketInputs) -> None:
+    # β 1,2 y prima país 1,5 %: CAPM = 3 % + 1,2 · 5 % + 1,5 % = 10,5 % > suelo 9,5 %.
+    m = dataclasses.replace(market_inputs, country_risk_premium_by_country={"spain": _rate(0.015)})
+    ke = compute_cost_of_equity(_company(company), m)
+    assert ke.capm == pytest.approx(0.105, rel=REL)
+    assert ke.floor is not None and ke.floor.value == pytest.approx(0.095, rel=REL)
+    assert ke.cost_of_equity == pytest.approx(0.105, rel=REL) and not ke.floor_applied
+
+
 def test_suelo_entra_en_el_wacc(company: Company, market_inputs: MarketInputs) -> None:
     from dcf.model.wacc import compute_wacc
 
@@ -164,7 +173,7 @@ def test_informe_muestra_suelo_y_beta(company: Company, market_inputs: MarketInp
     c = _company(company, beta=0.5)
     md = render_report(c, value_company(c, market_inputs, Assumptions(0.02), NOW), scale=1.0)
     assert "| Beta publicada por la fuente | 0,500 |" in md
-    assert "| Ke por CAPM = rf + β · PRM | 5,50 % | CAPM |" in md
+    assert "| Ke por CAPM = rf + β · PRM + prima país | 5,50 % | CAPM con prima país |" in md
     assert "| Suelo de Ke = rf + PRM + prima país | 8,00 % |" in md
     assert "| **Coste del capital Ke = máx(CAPM, suelo)** | **8,00 %** | Suelo aplicado |" in md
 
