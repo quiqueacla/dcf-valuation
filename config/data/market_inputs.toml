@@ -1,0 +1,958 @@
+# Plantilla de datos de mercado.
+# Copia este fichero a config/data/market_inputs.toml y rellena cada campo con
+# el dato real, su fuente y su fecha. Tasas en decimal: 0.03 = 3 %.
+# Mientras falten claves, la valoración falla con un error claro (no hay valores por defecto).
+
+[risk_free_rate]
+# Rentabilidad libre de riesgo, p. ej. bono alemán (Bund) a 10 años.
+value = 0.03424565
+source = "AAA - Bonos BCE"
+date = 2026-11-18
+
+[market_risk_premium]
+# Prima de MERCADO MADURO (países Aaa). La prima de cada país va en [country_risk_premium].
+# Antes 0.0578 = prima total de España (4,23 % madura + 1,55 % España).
+value = 0.0423
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Equity Risk Premium de un país Aaa"
+date = 2026-01-05
+
+# OPCIONAL. Coste de la deuda antes de impuestos para estimar los intereses de los
+# ejercicios en que Yahoo no los publica: intereses = value × deuda total del año.
+# Si se omite la sección y faltan intereses, la carga falla con un error claro.
+# Descomenta la sección completa para usarla.
+# [default_cost_of_debt]
+# value =
+# source = ""
+# date = AAAA-MM-DD
+
+[beta."REP.MC"]
+mode = "fichero"
+value = 1.1
+source = "Inventado"
+date = 2026-11-18
+
+# ---------------------------------------------------------------------------------------
+# Primas de riesgo país (CRP) de Damodaran, enero de 2026, por país de la sede de Yahoo
+# (info["country"], en inglés). Ke = máx(rf + β · PRM + CRP, rf + PRM + CRP).
+# Algunos países llevan también el nombre que usa Yahoo si difiere del de Damodaran.
+# ---------------------------------------------------------------------------------------
+
+[country_risk_premium."Abu Dhabi"]
+value = 0.0064
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa2"
+date = 2026-01-05
+
+[country_risk_premium."Albania"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Algeria"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Andorra (Principality of)"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Angola"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Argentina"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Armenia"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Aruba"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Australia"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Austria"]
+value = 0.0036
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa1"
+date = 2026-01-05
+
+[country_risk_premium."Azerbaijan"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Bahamas"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Bahrain"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Bangladesh"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Barbados"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Belarus"]
+value = 0.2666
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's C"
+date = 2026-01-05
+
+[country_risk_premium."Belgium"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Belize"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Benin"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Bermuda"]
+value = 0.0110
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A2"
+date = 2026-01-05
+
+[country_risk_premium."Bolivia"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ca"
+date = 2026-01-05
+
+[country_risk_premium."Bosnia and Herzegovina"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Botswana"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Brazil"]
+value = 0.0324
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba1"
+date = 2026-01-05
+
+[country_risk_premium."Brunei"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Bulgaria"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Burkina Faso"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Cambodia"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Cameroon"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Canada"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Cape Verde"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Cayman Islands"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Chile"]
+value = 0.0110
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A2"
+date = 2026-01-05
+
+[country_risk_premium."China"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."Colombia"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Congo (Democratic Republic of)"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Congo (Republic of)"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Cook Islands"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Costa Rica"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Côte d'Ivoire"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Croatia"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Cuba"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ca"
+date = 2026-01-05
+
+[country_risk_premium."Curacao"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Cyprus"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Czech Republic"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Czechia"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Denmark"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Dominican Republic"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Ecuador"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa3"
+date = 2026-01-05
+
+[country_risk_premium."Egypt"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."El Salvador"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Estonia"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."Ethiopia"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Fiji"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Finland"]
+value = 0.0036
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa1"
+date = 2026-01-05
+
+[country_risk_premium."France"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Gabon"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Gambia"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Georgia"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Germany"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Ghana"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Greece"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Guatemala"]
+value = 0.0324
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba1"
+date = 2026-01-05
+
+[country_risk_premium."Guernsey (States of)"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."Guinea"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Guinea-Bissau"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Guyana"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Haiti"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Honduras"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Hong Kong"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Hungary"]
+value = 0.0246
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa2"
+date = 2026-01-05
+
+[country_risk_premium."Iceland"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."India"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Indonesia"]
+value = 0.0246
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa2"
+date = 2026-01-05
+
+[country_risk_premium."Iran"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Iraq"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Ireland"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Isle of Man"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Israel"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Italy"]
+value = 0.0246
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa2"
+date = 2026-01-05
+
+[country_risk_premium."Jamaica"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Japan"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."Jersey (States of)"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Jordan"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Kazakhstan"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Kenya"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Korea"]
+value = 0.0064
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa2"
+date = 2026-01-05
+
+[country_risk_premium."South Korea"]
+value = 0.0064
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa2"
+date = 2026-01-05
+
+[country_risk_premium."Korea, D.P.R."]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Kuwait"]
+value = 0.0091
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A1"
+date = 2026-01-05
+
+[country_risk_premium."Kyrgyzstan"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Laos"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Latvia"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Lebanon"]
+value = 0.2666
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's C"
+date = 2026-01-05
+
+[country_risk_premium."Liberia"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Libya"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Liechtenstein"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Lithuania"]
+value = 0.0110
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A2"
+date = 2026-01-05
+
+[country_risk_premium."Luxembourg"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Macao"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Macau"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Macedonia"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."North Macedonia"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Madagascar"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Malawi"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Malaysia"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Maldives"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Mali"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Malta"]
+value = 0.0110
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A2"
+date = 2026-01-05
+
+[country_risk_premium."Mauritius"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Mexico"]
+value = 0.0246
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa2"
+date = 2026-01-05
+
+[country_risk_premium."Moldova"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Mongolia"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Montenegro"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Montserrat"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Morocco"]
+value = 0.0324
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba1"
+date = 2026-01-05
+
+[country_risk_premium."Mozambique"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa3"
+date = 2026-01-05
+
+[country_risk_premium."Myanmar"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Namibia"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Nepal"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Netherlands"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."New Zealand"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Nicaragua"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Niger"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa3"
+date = 2026-01-05
+
+[country_risk_premium."Nigeria"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Norway"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Oman"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Pakistan"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Panama"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Papua New Guinea"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Paraguay"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Peru"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Philippines"]
+value = 0.0246
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa2"
+date = 2026-01-05
+
+[country_risk_premium."Poland"]
+value = 0.0110
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A2"
+date = 2026-01-05
+
+[country_risk_premium."Portugal"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Qatar"]
+value = 0.0064
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa2"
+date = 2026-01-05
+
+[country_risk_premium."Ras Al Khaimah (Emirate of)"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Romania"]
+value = 0.0285
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa3"
+date = 2026-01-05
+
+[country_risk_premium."Russia"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Rwanda"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Saudi Arabia"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Senegal"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Serbia"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Sharjah"]
+value = 0.0324
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba1"
+date = 2026-01-05
+
+[country_risk_premium."Sierra Leone"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Singapore"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Slovakia"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Slovenia"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Solomon Islands"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Somalia"]
+value = 0.1295
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."South Africa"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Spain"]
+value = 0.0155
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's A3"
+date = 2026-01-05
+
+[country_risk_premium."Sri Lanka"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ca"
+date = 2026-01-05
+
+[country_risk_premium."St. Maarten"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."St. Vincent & the Grenadines"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Sudan"]
+value = 0.2666
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Suriname"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Swaziland"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Eswatini"]
+value = 0.0712
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B2"
+date = 2026-01-05
+
+[country_risk_premium."Sweden"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Switzerland"]
+value = 0.0000
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aaa"
+date = 2026-01-05
+
+[country_risk_premium."Syria"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Taiwan"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."Tajikistan"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Tanzania"]
+value = 0.0583
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B1"
+date = 2026-01-05
+
+[country_risk_premium."Thailand"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Togo"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Trinidad and Tobago"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Tunisia"]
+value = 0.0971
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa1"
+date = 2026-01-05
+
+[country_risk_premium."Turkey"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Türkiye"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Turks and Caicos Islands"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Uganda"]
+value = 0.0841
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's B3"
+date = 2026-01-05
+
+[country_risk_premium."Ukraine"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ca"
+date = 2026-01-05
+
+[country_risk_premium."United Arab Emirates"]
+value = 0.0064
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa2"
+date = 2026-01-05
+
+[country_risk_premium."United Kingdom"]
+value = 0.0078
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa3"
+date = 2026-01-05
+
+[country_risk_premium."United States"]
+value = 0.0023
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Aa1"
+date = 2026-01-05
+
+[country_risk_premium."Uruguay"]
+value = 0.0207
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Baa1"
+date = 2026-01-05
+
+[country_risk_premium."Uzbekistan"]
+value = 0.0466
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba3"
+date = 2026-01-05
+
+[country_risk_premium."Venezuela"]
+value = 0.2666
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's C"
+date = 2026-01-05
+
+[country_risk_premium."Vietnam"]
+value = 0.0390
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Ba2"
+date = 2026-01-05
+
+[country_risk_premium."Yemen, Republic"]
+value = 0.1554
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
+
+[country_risk_premium."Zambia"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's Caa2"
+date = 2026-01-05
+
+[country_risk_premium."Zimbabwe"]
+value = 0.1166
+source = "Damodaran, ctryprem.html (actualizado 2026-01-05): Country Risk Premium, rating Moody's NR"
+date = 2026-01-05
