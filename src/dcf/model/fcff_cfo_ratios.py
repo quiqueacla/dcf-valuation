@@ -18,7 +18,7 @@ FCFF = ValuationModel.FCFF_CFO
 
 @dataclass(frozen=True, slots=True)
 class HistoricalRatios:
-    """Ratios históricos por ejercicio y sus medias.
+    """Ratios históricos por ejercicio y sus medianas.
 
     Attributes:
         revenue_growth_by_year: Crecimiento de ventas de cada ejercicio respecto al
@@ -28,9 +28,9 @@ class HistoricalRatios:
         fcff_by_year: Flujo de caja libre para la empresa de los años con t válido.
         fcff_to_net_income_by_year: Conversión del beneficio en caja (FCFF / Net Income)
             de los años válidos (t válido y Net Income > 0).
-        average_revenue_growth: Media de los crecimientos históricos.
-        average_net_margin: Media de los márgenes netos.
-        average_fcff_to_net_income: Media de los ratios FCFF / Net Income válidos.
+        average_revenue_growth: Mediana de los crecimientos históricos.
+        average_net_margin: Mediana de los márgenes netos.
+        average_fcff_to_net_income: Mediana de los ratios FCFF / Net Income válidos.
         warnings: Avisos sobre años excluidos de alguna media y su motivo.
     """
 
@@ -121,8 +121,8 @@ def compute_historical_ratios(company: Company) -> HistoricalRatios:
         tax_rate_by_year=tax_rates,
         fcff_by_year=fcff,
         fcff_to_net_income_by_year=conversion,
-        average_revenue_growth=float(np.mean(list(growth.values()))),
-        average_net_margin=float(np.mean(list(margin.values()))),
-        average_fcff_to_net_income=float(np.mean(list(conversion.values()))),
+        average_revenue_growth=float(np.median(list(growth.values()))),
+        average_net_margin=float(np.median(list(margin.values()))),
+        average_fcff_to_net_income=float(np.median(list(conversion.values()))),
         warnings=tuple(warnings),
     )

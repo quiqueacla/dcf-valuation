@@ -57,3 +57,31 @@ RONIC_TO_RATE = 2.0
 Motivo: la ventaja competitiva tiende a erosionarse; un RONIC muy superior a la tasa
 infla el VT. Elección del usuario (2026-11-21).
 """
+
+DEFAULT_BETA_MODE = "bottom-up"
+"""Modo de beta si ``market_inputs.toml`` no indica ``[beta].mode``.
+
+Motivo: la beta de regresión de Yahoo es ruidosa (p. ej. REP.MC −0,181, CABK.MC 0,12);
+una beta sectorial reapalancada es más estable. Elección del usuario (2026-11-24).
+"""
+
+BLUME_WEIGHT = 0.67
+"""Peso de la beta de regresión en el ajuste de Blume: β_aj = 0,67 · β + 0,33 · 1.
+
+Fuente: Blume (1971), «On the assessment of risk»; es la beta ajustada que publica
+Bloomberg. Se usa cuando no hay beta sectorial para la industria de la empresa.
+"""
+
+KE_FLOOR_BETA = 1.0
+"""Beta del suelo de Ke: Ke ≥ rf + 1 · PRM + prima de riesgo país.
+
+Motivo: ninguna acción debería exigir menos que el mercado de su país; elección del
+usuario (2026-11-24).
+"""
+
+SCENARIO_GROWTH_GAP = 0.01
+"""Un escenario bajista o alcista se excluye si su g implícito difiere más de 1 punto del g.
+
+Motivo: elección del usuario (2026-11-24). La valoración central no se excluye: solo avisa.
+Se puede cambiar en ``config/thresholds.toml`` (``scenario_growth_gap``).
+"""

@@ -117,7 +117,10 @@ Para cada año histórico *i*:
 Se suman los intereses después de impuestos porque el CFO ya los ha restado y el FCFF es el
 flujo para todos los financiadores (accionistas y acreedores).
 
-Se usan medias aritméticas simples: ḡ_hist, m̄, c̄.
+Se usan **medianas** de los años válidos: ḡ_hist, m̄, c̄. Con 4 años, la mediana es la
+media de los dos valores centrales, así que un año atípico (p. ej. un circulante que
+infla el CFO o un beneficio extraordinario) no arrastra el ratio que se proyecta. Lo
+mismo se aplica a los ratios de §10, §11 y §13 y al ROIC / ROE de §12.
 
 **Años excluidos** (se avisa en el resultado; si no queda ningún año válido, error):
 
@@ -131,7 +134,7 @@ Se usan medias aritméticas simples: ḡ_hist, m̄, c̄.
 
 - Con estimaciones de analistas: Ventas_{+1} (ejercicio en curso) y Ventas_{+2} son las estimadas.
   Sus crecimientos g_{+1}, g_{+2} se calculan respecto al año anterior. Los años +3..+5 crecen a
-  la media de {g_{−3}, g_{−2}, g_{−1}, g_{+1}, g_{+2}}.
+  la mediana de {g_{−3}, g_{−2}, g_{−1}, g_{+1}, g_{+2}}.
 - Sin estimaciones: todos los años crecen a ḡ_hist.
 
 **Flujos:**
@@ -147,8 +150,8 @@ WACC = E/(D+E) · Ke + D/(D+E) · Kd · (1 − t)
 |---|---|---|
 | rf | Rentabilidad libre de riesgo | `config/data/market_inputs.toml` (valor, fuente y fecha que introduce el usuario) |
 | PRM | Prima de riesgo de mercado | `config/data/market_inputs.toml` |
-| β | Beta de la acción | Según `[beta].mode` de `market_inputs.toml` (ver abajo). Por defecto Yahoo Finance (5 años, datos mensuales) |
-| Ke | CAPM: rf + β · PRM | — |
+| β | Beta de la acción | Según `[beta].mode` de `market_inputs.toml` (ver abajo). Por defecto bottom-up: beta sectorial reapalancada o, sin ella, la de Yahoo ajustada por Blume |
+| Ke | máx(CAPM, suelo): CAPM = rf + β · PRM; suelo = rf + PRM + prima de riesgo país | Prima país en `[country_risk_premium."PAÍS"]` de `market_inputs.toml` |
 | Kd | Media de los Kd_i = Intereses_i / Deuda total_i | Históricos. Se excluyen años con deuda 0. Años sin intereses publicados: Kd_i = `[default_cost_of_debt]` |
 | t | **Mediana** de los t_i = Provisión_i / BAI_i válidos | Históricos (mismos criterios de exclusión que §2). La mediana evita que un año anómalo (SCYR.MC 2023: 91,6 %) distorsione el ahorro fiscal |
 | E | Cotización × acciones diluidas (valor de mercado) | Último dato |
@@ -160,7 +163,8 @@ Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita 
 
 | Modo | Beta usada | Error |
 |---|---|---|
-| `yahoo` (por defecto) | La de Yahoo | Si Yahoo no la publica o es negativa |
+| `bottom-up` (por defecto) | Beta sectorial desapalancada βu de `[sector_beta."CLAVE"]` (clave de industria de Yahoo y, si no está, la de sector), reapalancada: β = βu · (1 + (1 − t) · D / E). Sin beta sectorial: la de Yahoo ajustada por Blume, β = 0,67 · β_Yahoo + 0,33. Si Yahoo no la publica o es negativa, la del fichero (`[beta]`) | Si no hay beta sectorial, ni de Yahoo válida, ni del fichero |
+| `yahoo` | La de Yahoo, sin ajustar | Si Yahoo no la publica o es negativa |
 | `fichero` | La del fichero (override) | Si no hay beta en el fichero |
 | `yahoo-fichero` | La de Yahoo; si no la publica o es negativa, la del fichero, con el motivo en el informe y en los avisos del WACC | Si hace falta la del fichero y no está |
 
@@ -168,7 +172,27 @@ Los pesos E/(D+E) y D/(D+E) deben sumar 1. Si D = 0, WACC = Ke y no se necesita 
   ticker (`[beta."REP.MC"]`); la del ticker prevalece campo a campo, también en `mode`.
 - Una beta negativa no es válida: daría Ke < rf (p. ej. Repsol en Yahoo, β = −0,181, por la
   correlación negativa con el mercado en 2022). Una beta 0 se acepta (Ke = rf).
-- El informe muestra la beta publicada por Yahoo y la utilizada, con fuente, fecha y modo.
+- **Bottom-up:** D es la deuda total contable, E la capitalización (cotización × acciones
+  diluidas) y t la mediana de los tipos efectivos. La beta sectorial (p. ej. las
+  desapalancadas de Damodaran por industria) la introduce el usuario con fuente y fecha.
+  En `fcfe_fin` se usa sin reapalancar: la deuda de un banco o una aseguradora es su materia
+  prima, y sus betas sectoriales ya se publican apalancadas.
+- **Blume** (1971): la beta de regresión tiende a 1 con el tiempo; 0,67 · β + 0,33 es la
+  beta ajustada que publica Bloomberg. Peso en `src/dcf/defaults.py` (`BLUME_WEIGHT`).
+- El informe muestra la beta publicada por Yahoo y la utilizada, con fuente, fecha, modo y,
+  si se usa una de respaldo, el motivo.
+
+**Suelo de Ke por riesgo país.** Ke = máx(rf + β · PRM, rf + 1 · PRM + CRP), con CRP la
+prima de riesgo país del país de la sede (`info.country` de Yahoo, p. ej. "Spain") en
+`[country_risk_premium."Spain"]` de `market_inputs.toml` (value ≥ 0, source, date). Ninguna
+acción se descuenta a menos que el mercado de su país. Si Yahoo no publica el país o falta
+su prima, error (para un país sin prima, value = 0). Se aplica al Ke de los cuatro
+modelos (en los FCFF, dentro del WACC); con tasa de descuento forzada no se aplica.
+
+- **Cuidado con la doble cuenta:** si la PRM ya es la prima total de un país (p. ej. la
+  «Total Equity Risk Premium» de Damodaran para España, que suma la madura y la del país),
+  la prima país del fichero debe ser 0; si la PRM es la de un mercado maduro, la prima país
+  es la «Country Risk Premium».
 
 **Tasa de descuento forzada** (WACC en FCFF, Ke en FCFE). Precedencia:
 
@@ -237,12 +261,19 @@ Se configuran en `config/settings.toml` (`[scenarios]`). Hay dos modos combinabl
 - Márgenes, conversión FCFF/Net Income y el puente a fondos propios son comunes a todos.
 - Un escenario que incumple g < WACC o g < rf se marca como no válido en el informe; no detiene
   la valoración.
+- **Exclusión por g implícito:** un escenario bajista o alcista cuyo g implícito en el VT
+  (§12) difiere más de `scenario_growth_gap` (1 punto por defecto,
+  `config/thresholds.toml`) de su g se excluye: se marca no válido, con el motivo, y queda
+  vacío en el resumen. La valoración central (neutro) nunca se excluye; si la incumple, el
+  aviso de g implícito de §12 lo indica. Con `gordon` el g implícito es el g y nunca se
+  excluye.
 
 ## 9. Informe
 
 `uv run python -m dcf <TICKER>` muestra el informe en consola y lo guarda en
 `output/<TICKER>_<fecha UTC>.md`. Secciones: compañía, WACC, históricos y proyecciones, valor
-intrínseco (puente, escenarios y sensibilidad). Importes en millones de EUR con 1 decimal, valor
+intrínseco (puente, escenarios y sensibilidad). La columna resumen de la tabla de históricos
+es la mediana (§2). Importes en millones de EUR con 1 decimal, valor
 por acción con 2 decimales y tasas en % con 2 decimales, con redondeo comercial (mitad hacia
 arriba) solo en la presentación.
 
@@ -254,7 +285,7 @@ propios, ROE y reinversión) y la 4 (sin puente deuda/caja; añade valor contabl
 
 En los modelos fcff, fcff_cfo y fcfe, la tabla de históricos (3.1) incluye EBIT_i y margen EBIT,
 NOPAT_i = EBIT_i · (1 − t), con t la mediana de los tipos efectivos; capital invertido_i = deuda total + fondos
-propios − caja al cierre; y ROIC_i = NOPAT_i / capital invertido_{i−1}, con su media (el RONIC
+propios − caja al cierre; y ROIC_i = NOPAT_i / capital invertido_{i−1}, con su mediana (el RONIC
 histórico del value driver, §12). El primer año no tiene ROIC (falta el capital inicial). En
 fcfe_fin se muestra el ROE.
 En fcfe, entre el FCFF y el capital invertido, se muestra el paso al FCFE histórico:
@@ -333,7 +364,7 @@ Fórmula 1.1 de `docs/dcf_metodos.md`:
 
 FCFF = EBIT · (1 − t) + D&A − Capex − ΔNWC
 
-**Ratios históricos** (medias aritméticas de los 4 años, salvo t):
+**Ratios históricos** (medianas de los 4 años, como t; §2):
 
 - Margen EBIT = EBIT_i / Ventas_i; D&A / ventas; Capex / ventas.
 - Circulante comercial NWC_i = clientes_i + existencias_i − proveedores_i; NWC / ventas.
@@ -367,9 +398,9 @@ del último año proyectado (FCFF o FCFE).
   g. Con RONIC = r el crecimiento no crea valor (VT = Beneficio_N · (1 + g) / r).
   - NOPAT_N: en fcff, el de la proyección; en fcff_cfo, Ventas_N · margen EBIT medio · (1 − t).
   - RONIC por precedencia: `--set ronic=` > `[ronic."TICKER"]` de `market_inputs.toml` >
-    ROIC histórico medio, ROIC_i = NOPAT_i / capital invertido_{i−1}, con capital invertido
-    = deuda total + fondos propios − caja. En los FCFE, el análogo es el ROE histórico medio
-    (Net Income_i / FP_{i−1}). Sin RONIC disponible, error.
+    ROIC histórico mediano, ROIC_i = NOPAT_i / capital invertido_{i−1}, con capital invertido
+    = deuda total + fondos propios − caja. En los FCFE, el análogo es el ROE histórico
+    mediano (Net Income_i / FP_{i−1}). Sin RONIC disponible, error.
 - **Múltiplo de salida:** precedencia `--set exit_multiple=` > `[exit_multiple."TICKER"]` de
   `market_inputs.toml` (con fuente y fecha); sin múltiplo, error. EBITDA_N = EBIT_N + D&A_N
   (en fcff_cfo, ventas_N · (margen EBIT + D&A/ventas) medios; sin D&A, no disponible).
@@ -386,6 +417,7 @@ del último año proyectado (FCFF o FCFE).
 | Último año atípico | \|CF_último − media de los anteriores\| / \|media\| > umbral; por encima, posible sobrevaloración si es puntual | `last_flow_deviation` = 0.33 |
 | VT incoherente | \|g_impl − g\| > umbral (value driver y múltiplo) | `implied_growth_gap` = 0.0075 (0,75 puntos) |
 | RONIC muy alto | RONIC (o ROE) > umbral × r: supone una ventaja competitiva duradera; un RONIC cercano a r es más prudente | `ronic_to_rate` = 2 |
+| VT muy incoherente | \|g_impl − g\| > umbral: el aviso de «VT incoherente» añade que un escenario así se excluiría (§8) | `scenario_growth_gap` = 0.01 (1 punto) |
 
 - Los flujos históricos comprobados: FCFF en fcff y fcff_cfo (el de cada modelo); FCFE
   (FCFF_i − Int_i·(1−t) + ΔDeuda neta_i) y FCFF en fcfe; Net Income_i − ΔFP_i en fcfe_fin.

@@ -30,7 +30,12 @@ from dcf.valuation.discounting import (
     sensitivity_grid,
     value_per_share,
 )
-from dcf.valuation.scenarios import ScenarioConfig, ScenarioName, ScenarioResult
+from dcf.valuation.scenarios import (
+    ScenarioConfig,
+    ScenarioName,
+    ScenarioResult,
+    growth_gap_error,
+)
 
 FCFF = ValuationModel.FCFF
 
@@ -195,6 +200,7 @@ def compute_fcff_scenarios(
     risk_free_rate: float,
     assumptions: Assumptions,
     config: ScenarioConfig,
+    max_growth_gap: float | None = None,
 ) -> tuple[ScenarioResult, ...]:
     """Calcula el valor por acción de los tres escenarios de un modelo FCFF.
 
@@ -205,10 +211,13 @@ def compute_fcff_scenarios(
         risk_free_rate: rf en decimal, para validar g < rf.
         assumptions: g terminal central.
         config: Modos activos y desplazamientos.
+        max_growth_gap: Diferencia máxima entre el g implícito del VT y el g de un
+            escenario bajista o alcista, en puntos (0.01 = 1); ``None`` = sin límite.
 
     Returns:
         Escenarios en orden bajista, neutro, alcista. Si un escenario incumple
-        g < WACC o g < rf, se devuelve con ``error`` y sin valores.
+        g < WACC o g < rf, o (bajista y alcista) su g implícito se aleja más de
+        ``max_growth_gap``, se devuelve con ``error`` y sin valores.
     """
     results: list[ScenarioResult] = []
     for name in ScenarioName:
@@ -220,6 +229,10 @@ def compute_fcff_scenarios(
             ev = compute_enterprise_value(flows, w, g, risk_free_rate, terminal)
         except ValueError as exc:
             results.append(ScenarioResult(name, case, w, g, None, None, None, str(exc), warnings))
+            continue
+        gap = growth_gap_error(name, ev.terminal_value, flows[-1], w, g, max_growth_gap)
+        if gap is not None:
+            results.append(ScenarioResult(name, case, w, g, None, None, None, gap, warnings))
             continue
         equity = equity_value(ev.enterprise_value, company.balance)
         results.append(

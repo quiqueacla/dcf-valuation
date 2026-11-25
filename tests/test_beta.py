@@ -1,8 +1,9 @@
 """Selección de la beta: modos yahoo, fichero y yahoo-fichero (sin red).
 
 Caso de referencia (fixture sintético, ver test_wacc): con β = 1,2, Ke = 9 % y
-WACC = 8,125 %. Con β del fichero = 0,8: Ke = 3 % + 0,8 × 5 % = 7 % y
-WACC = 5/6 × 7 % + 1/6 × 5 % × 0,75 = 5,8333… % + 0,625 % = 6,4583… %.
+WACC = 8,125 %. Con β del fichero = 1,1: Ke = 3 % + 1,1 × 5 % = 8,5 % (por encima del suelo
+rf + PRM = 8 %) y WACC = 5/6 × 8,5 % + 1/6 × 5 % × 0,75 = 7,0833… % + 0,625 % = 7,7083… %.
+Los modos bottom-up y el suelo de Ke se prueban en test_ke_floor.
 """
 
 import dataclasses
@@ -19,8 +20,8 @@ from tests.test_market_inputs import VALID
 
 REL = 1e-9
 NOW = datetime(2026, 11, 18, tzinfo=UTC)
-MANUAL = MarketRate(0.8, "Damodaran, sector", NOW)
-WACC_MANUAL = 5 / 6 * 0.07 + 1 / 6 * 0.05 * 0.75
+MANUAL = MarketRate(1.1, "Damodaran, sector", NOW)
+WACC_MANUAL = 5 / 6 * 0.085 + 1 / 6 * 0.05 * 0.75
 
 
 # Compañía del fixture con otra beta de la fuente.
@@ -50,10 +51,10 @@ def test_yahoo_falla_sin_beta_o_negativa(
 
 def test_fichero_sobrescribe_yahoo(company: Company, market_inputs: MarketInputs) -> None:
     w = compute_wacc(company, _inputs(market_inputs, BetaMode.FILE, MANUAL))
-    assert w.beta == 0.8
+    assert w.beta == 1.1
     assert w.beta_choice.source == "Damodaran, sector"
     assert w.beta_choice.source_beta == 1.2
-    assert w.cost_of_equity == pytest.approx(0.07, rel=REL)
+    assert w.cost_of_equity == pytest.approx(0.085, rel=REL)
     assert w.wacc == pytest.approx(WACC_MANUAL, rel=REL)
     assert w.warnings == ()
 
@@ -76,7 +77,7 @@ def test_yahoo_fichero_recurre_al_fichero_e_indica_motivo(
     company: Company, market_inputs: MarketInputs, beta: float | None, motivo: str
 ) -> None:
     w = compute_wacc(_with_beta(company, beta), _inputs(market_inputs, BetaMode.YAHOO_FILE, MANUAL))
-    assert w.beta == 0.8
+    assert w.beta == 1.1
     assert w.beta_choice.reason is not None and motivo in w.beta_choice.reason
     assert any(motivo in m for m in w.warnings)
     assert w.wacc == pytest.approx(WACC_MANUAL, rel=REL)
@@ -142,9 +143,9 @@ def _load(tmp_path: Path, extra: str) -> MarketInputs:
     return load_market_inputs(path)
 
 
-def test_sin_seccion_beta_es_modo_yahoo(tmp_path: Path) -> None:
+def test_sin_seccion_beta_es_modo_bottom_up(tmp_path: Path) -> None:
     m = _load(tmp_path, "")
-    assert m.beta_settings_for("ITX.MC") == BetaSettings(BetaMode.YAHOO)
+    assert m.beta_settings_for("ITX.MC") == BetaSettings(BetaMode.BOTTOM_UP)
 
 
 def test_carga_seccion_beta(tmp_path: Path) -> None:
@@ -180,5 +181,5 @@ def test_informe_indica_origen_y_motivo(company: Company, market_inputs: MarketI
     m = _inputs(market_inputs, BetaMode.YAHOO_FILE, MANUAL)
     md = render_report(c, value_company(c, m, Assumptions(terminal_growth=0.02), NOW), scale=1.0)
     assert "modo yahoo-fichero" in md
-    assert "se usa la del fichero porque la beta de" in md and "negativa" in md
+    assert "respaldo porque la beta de" in md and "negativa" in md
     assert "Damodaran, sector" in md

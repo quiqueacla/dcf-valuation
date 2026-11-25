@@ -132,7 +132,7 @@ def _history_section(company: Company, result: FcfeValuationResult, scale: float
     return (
         "## 3. Históricos y proyecciones\n\n"
         "### 3.1 Históricos\n\n"
-        + table(["Partida", *map(str, years), "Media"], hist_rows)
+        + table(["Partida", *map(str, years), "Mediana"], hist_rows)
         + "\n"
         + warnings_block("Años excluidos de alguna media", result.ratios.warnings)
         + "\n### 3.2 Proyecciones\n\n"

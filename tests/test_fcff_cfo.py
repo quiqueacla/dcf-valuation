@@ -85,16 +85,18 @@ def test_sensibilidad_vacia_si_g_mayor_que_wacc(balance: BalanceSnapshot) -> Non
 
 
 def test_valoracion_completa_caso_referencia(company: Company, market_inputs: MarketInputs) -> None:
-    # Fixture: WACC 8,125 %, g 2 %, rf 3 %. Valores calculados de forma independiente.
+    # Fixture: WACC 8,125 %, g 2 %, rf 3 %. Calculado de forma independiente con medianas:
+    # FCFF_t = 10 % · ventas_t · (1 + 37,5 · (1/1100 + 1/1210)), ventas 1450, 1550 y
+    # después +10 % (mediana de los crecimientos); VT = FCFF_5 · 1,02 / 0,06125.
     r = value_company(company, market_inputs, Assumptions(terminal_growth=0.02), NOW)
     assert r.wacc.wacc == pytest.approx(0.08125, rel=REL)
-    assert sum(p.present_value for p in r.projections) == pytest.approx(716.0882988496072, rel=REL)
-    assert r.terminal_value == pytest.approx(3577.742402086519, rel=REL)
-    assert r.terminal_value_present == pytest.approx(2420.909004246504, rel=REL)
-    assert r.enterprise_value == pytest.approx(3136.9973030961114, rel=REL)
-    assert r.equity_value == pytest.approx(3036.9973030961114, rel=REL)
-    assert r.value_per_share == pytest.approx(30.369973030961113, rel=REL)
-    assert r.terminal_value_weight == pytest.approx(0.7717281114195246, rel=REL)
+    assert sum(p.present_value for p in r.projections) == pytest.approx(722.5312647775631, rel=REL)
+    assert r.terminal_value == pytest.approx(3659.2083673469406, rel=REL)
+    assert r.terminal_value_present == pytest.approx(2476.033623817653, rel=REL)
+    assert r.enterprise_value == pytest.approx(3198.564888595216, rel=REL)
+    assert r.equity_value == pytest.approx(3098.564888595216, rel=REL)
+    assert r.value_per_share == pytest.approx(30.98564888595216, rel=REL)
+    assert r.terminal_value_weight == pytest.approx(0.7741076733025438, rel=REL)
     assert r.sensitivity.loc[0.08125, 0.02] == pytest.approx(r.value_per_share, rel=REL)
 
 

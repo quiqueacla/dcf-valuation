@@ -141,7 +141,15 @@ def value_company(
         value_per_share=value_per_share(equity, company.balance.diluted_shares),
         sensitivity=sensitivity_table(fcffs, company.balance, rate.value, g, rf, terminal=fn),
         scenarios=(
-            compute_fcff_scenarios(company, flows_for, rate.value, rf, assumptions, scenario_config)
+            compute_fcff_scenarios(
+                company,
+                flows_for,
+                rate.value,
+                rf,
+                assumptions,
+                scenario_config,
+                options.thresholds.scenario_growth_gap,
+            )
             if scenario_config is not None
             else ()
         ),

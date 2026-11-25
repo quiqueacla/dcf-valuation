@@ -1,6 +1,6 @@
 """Resumen de un lote de tickers en Markdown y CSV (sin red).
 
-Cifras del fixture FCFF_CFO (conftest: valor 30,37 €, WACC 8,125 %, Gordon clásico) y del
+Cifras del fixture FCFF_CFO (conftest: valor 30,99 €, WACC 8,125 %, Gordon clásico) y del
 banco sintético FCFE_FIN (test_fcfe_fin: 3,22 €, Ke 9 %), calculadas a mano en sus tests.
 """
 
@@ -39,8 +39,8 @@ def test_fila_fcff(company: Company, market_inputs: MarketInputs) -> None:
     r = fcff_cfo.value_company(company, market_inputs, Assumptions(0.02), NOW, COST)
     row = summary_row(company, r, "config/settings.toml")
     assert (row.ticker, row.model, row.rate_name) == ("TEST", "fcff_cfo", "WACC")
-    assert row.neutral == pytest.approx(30.369973030961113, rel=REL)
-    assert row.upside(row.neutral) == pytest.approx(30.369973030961113 / 10 - 1, rel=REL)
+    assert row.neutral == pytest.approx(30.98564888595216, rel=REL)
+    assert row.upside(row.neutral) == pytest.approx(30.98564888595216 / 10 - 1, rel=REL)
     assert row.bearish is not None and row.bullish is not None
     assert row.bearish < row.neutral < row.bullish
     assert row.discount_rate == pytest.approx(0.08125, rel=REL)
@@ -79,7 +79,7 @@ def test_markdown(company: Company, market_inputs: MarketInputs) -> None:
     assert "# Resumen de valoraciones DCF" in md and "no es una recomendación" in md
     assert "Tickers valorados: 1 de 2" in md
     assert "| **TEST** | Empresa Sintética S.A. | fcff_cfo | gordon | 10,00 € |" in md
-    assert "**30,37 €** | 203,70 % |" in md
+    assert "**30,99 €** | 209,86 % |" in md
     assert "WACC 8,13 %" in md and "Fuente de g" in md
     assert "## Tickers no valorados" in md and "**MALO**: falta EBIT" in md
     assert "### TEST" in md  # avisos del ticker
@@ -91,9 +91,9 @@ def test_csv_formato_excel_espanol(company: Company, market_inputs: MarketInputs
     text = summary_csv(rows)
     header = text.splitlines()[0].split(CSV_SEPARATOR)
     assert header[:6] == ["ticker", "empresa", "modelo", "vt", "cotizacion_eur", "bajista_eur"]
-    assert "30,369973" in text  # decimal con coma
+    assert "30,985648" in text  # decimal con coma
     back = pd.read_csv(io.StringIO(text), sep=CSV_SEPARATOR, decimal=CSV_DECIMAL)
-    assert back["neutro_eur"].iloc[0] == pytest.approx(30.369973030961113, rel=1e-9)
+    assert back["neutro_eur"].iloc[0] == pytest.approx(30.98564888595216, rel=1e-9)
     assert back["error"].iloc[1] == "falta EBIT" and pd.isna(back["neutro_eur"].iloc[1])
     assert list(summary_frame(rows).columns) == header
 

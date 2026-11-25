@@ -14,7 +14,7 @@ from dcf.company import (
     TerminalMethod,
     ValuationModel,
 )
-from dcf.model.cost_of_equity import MarketInputs, MarketRate
+from dcf.model.cost_of_equity import BetaMode, BetaSettings, MarketInputs, MarketRate
 
 DATA_DATE = datetime(2026, 11, 18, tzinfo=UTC)
 
@@ -25,12 +25,16 @@ def market_inputs() -> MarketInputs:
     return MarketInputs(
         risk_free_rate=MarketRate(0.03, "fixture", DATA_DATE),
         market_risk_premium=MarketRate(0.05, "fixture", DATA_DATE),
+        # Beta de Yahoo sin ajustar y prima país 0: las referencias a mano usan β = 1,2.
+        beta=BetaSettings(mode=BetaMode.YAHOO),
+        country_risk_premium_by_country={"spain": MarketRate(0.0, "fixture", DATA_DATE)},
     )
 
 
 @pytest.fixture
 def info() -> CompanyInfo:
     return CompanyInfo(
+        country="Spain",
         ticker="TEST",
         name="Empresa Sintética S.A.",
         source="fixture",

@@ -2,7 +2,8 @@
 
 Ventas 1000, 1100, 1210, 1331 → crecimiento 10 % cada año. Margen neto 10 %.
 t = 35 / 140 = 25 %. FCFF = 0,15·R + 10·(1 − 0,25) − 0,05·R = 0,10·R + 7,5.
-FCFF/NI = 1 + 75/R → 1,075; 1,0681818; 1,0619835; 1,0563486 → media 1,0653785.
+FCFF/NI = 1 + 75/R → 1,075; 1,0681818; 1,0619835; 1,0563486 → mediana
+(1,0681818 + 1,0619835) / 2 = 1 + 37,5 · (1/1100 + 1/1210) = 1,0650826.
 """
 
 import dataclasses
@@ -25,7 +26,7 @@ def test_caso_referencia(company: Company) -> None:
     assert r.fcff_by_year[2022] == pytest.approx(107.5, rel=REL)
     assert r.fcff_by_year[2025] == pytest.approx(140.6, rel=REL)
     assert r.fcff_to_net_income_by_year[2022] == pytest.approx(1.075, rel=REL)
-    assert r.average_fcff_to_net_income == pytest.approx(1.065378474830954, rel=REL)
+    assert r.average_fcff_to_net_income == pytest.approx(1 + 37.5 * (1 / 1100 + 1 / 1210), rel=REL)
     assert r.warnings == ()
 
 
@@ -58,7 +59,7 @@ def test_excluye_ano_con_bai_negativo(company: Company) -> None:
     r = compute_historical_ratios(dataclasses.replace(company, debt_cost_data=tuple(debt)))
     assert 2022 not in r.fcff_to_net_income_by_year
     assert 2022 not in r.tax_rate_by_year
-    expected = (1.0681818181818181 + 1.06198347107438 + 1.0563486100676183) / 3
+    expected = 1.06198347107438  # mediana de los tres años válidos
     assert r.average_fcff_to_net_income == pytest.approx(expected, rel=REL)
     assert len(r.warnings) == 1 and "2022" in r.warnings[0] and "BAI" in r.warnings[0]
 
@@ -70,7 +71,7 @@ def test_excluye_ano_con_perdidas_pero_lo_mantiene_en_margen(company: Company) -
     assert 2023 not in r.fcff_to_net_income_by_year
     assert 2023 in r.fcff_by_year
     assert r.net_margin_by_year[2023] == pytest.approx(-0.05, rel=REL)
-    assert r.average_net_margin == pytest.approx((0.10 * 3 - 0.05) / 4, rel=REL)
+    assert r.average_net_margin == pytest.approx(0.10, rel=REL)  # mediana: el −5 % no la mueve
     assert "Net Income" in r.warnings[0]
 
 

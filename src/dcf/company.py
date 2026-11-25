@@ -209,6 +209,12 @@ class CompanyInfo:
             tabla de tipos o el forzado por el usuario.
         terminal_method: Método de valor terminal (gordon, gordon_value_driver o
             vt_mult): el de la tabla de tipos o el forzado por el usuario.
+        country: País de la sede según la fuente (p. ej. "Spain"), que fija la prima de
+            riesgo país del suelo de Ke; ``None`` si no lo publica.
+        sector_key: Clave de sector de la fuente (``sectorKey`` de Yahoo, p. ej.
+            "industrials"), para buscar la beta sectorial; ``None`` si no la publica.
+        industry_key: Clave de industria de la fuente (``industryKey``, p. ej.
+            "engineering-construction"); ``None`` si no la publica.
     """
 
     ticker: str
@@ -226,6 +232,9 @@ class CompanyInfo:
     company_type: CompanyType | None = None
     valuation_model: ValuationModel = ValuationModel.FCFF
     terminal_method: TerminalMethod = TerminalMethod.VALUE_DRIVER
+    country: str | None = None
+    sector_key: str | None = None
+    industry_key: str | None = None
 
     # Valida identificación, fechas con zona y coherencia de los tipos de cambio.
     def __post_init__(self) -> None:

@@ -82,6 +82,7 @@ def _raw() -> YahooRawData:
         "sectorKey": "technology",
         "industry": "Consumer Electronics",
         "industryKey": "consumer-electronics",
+        "country": "Spain",
     }
     return YahooRawData("SYN", FETCHED, info, income, cashflow, balance, estimates, {"USD": FX})
 

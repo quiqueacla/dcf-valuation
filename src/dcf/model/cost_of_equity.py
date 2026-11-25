@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
-from dcf.company import Company
+from dcf.company import Company, ValuationModel
+from dcf.defaults import BLUME_WEIGHT, DEFAULT_BETA_MODE, KE_FLOOR_BETA
+from dcf.model.tax import tax_rates
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +51,9 @@ class BetaMode(StrEnum):
     """Siempre la beta del fichero (override de la de la fuente)."""
     YAHOO_FILE = "yahoo-fichero"
     """La de la fuente; la del fichero solo si la fuente no la publica o es negativa."""
+    BOTTOM_UP = "bottom-up"
+    """Beta sectorial desapalancada del fichero, reapalancada con el D/E de la empresa;
+    sin beta sectorial, la de la fuente ajustada por Blume (por defecto)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,8 +89,10 @@ class BetaChoice:
         date: Fecha de la beta utilizada (la de la descarga si es de la fuente), en UTC.
         mode: Modo de selección aplicado.
         source_beta: Beta publicada por la fuente de datos; ``None`` si no la publica.
-        reason: En el modo ``yahoo-fichero``, por qué se usa la del fichero;
-            ``None`` en los demás casos.
+        reason: Por qué no se usa la beta principal del modo (en ``yahoo-fichero``, la
+            de la fuente; en ``bottom-up``, la sectorial); ``None`` si se usa.
+        unlevered_beta: En ``bottom-up``, beta sectorial desapalancada (riesgo del
+            negocio sin deuda) antes de reapalancar; ``None`` en los demás casos.
     """
 
     value: float
@@ -94,6 +101,7 @@ class BetaChoice:
     mode: BetaMode
     source_beta: float | None
     reason: str | None = None
+    unlevered_beta: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +126,12 @@ class MarketInputs:
             (``[exit_multiple."REP.MC"]``): EV/EBITDA en FCFF, P/E en FCFE.
         ronic_by_ticker: RONIC (ROE en FCFE) del value driver por ticker
             (``[ronic."REP.MC"]``); sin él se usa el histórico.
+        sector_beta_by_key: Beta desapalancada por clave de industria o de sector de la
+            fuente (``[sector_beta."engineering-construction"]``): riesgo sistemático
+            del negocio sin deuda, p. ej. las de Damodaran. Claves en minúsculas.
+        country_risk_premium_by_country: Prima de riesgo país por país de la fuente
+            (``[country_risk_premium."Spain"]``): rentabilidad extra que exige invertir en
+            ese país frente a uno sin riesgo de impago. Claves en minúsculas.
     """
 
     risk_free_rate: MarketRate
@@ -128,6 +142,40 @@ class MarketInputs:
     discount_rate_by_ticker: Mapping[str, MarketRate] = field(default_factory=dict)
     exit_multiple_by_ticker: Mapping[str, MarketRate] = field(default_factory=dict)
     ronic_by_ticker: Mapping[str, MarketRate] = field(default_factory=dict)
+    sector_beta_by_key: Mapping[str, MarketRate] = field(default_factory=dict)
+    country_risk_premium_by_country: Mapping[str, MarketRate] = field(default_factory=dict)
+
+    # Beta sectorial desapalancada: primero la de la industria, después la del sector.
+    def sector_beta_for(
+        self, industry_key: str | None, sector_key: str | None
+    ) -> tuple[str, MarketRate] | None:
+        """Busca la beta sectorial desapalancada de una empresa.
+
+        Args:
+            industry_key: Clave de industria de la fuente (``None`` si no la hay).
+            sector_key: Clave de sector de la fuente (``None`` si no la hay).
+
+        Returns:
+            Clave encontrada y beta con fuente y fecha, o ``None``.
+        """
+        for key in (industry_key, sector_key):
+            if key is not None and key.lower() in self.sector_beta_by_key:
+                return key.lower(), self.sector_beta_by_key[key.lower()]
+        return None
+
+    # Prima de riesgo país del fichero; None si no está.
+    def country_risk_premium_for(self, country: str | None) -> MarketRate | None:
+        """Devuelve la prima de riesgo país de un país.
+
+        Args:
+            country: País según la fuente (p. ej. "Spain"); no distingue mayúsculas.
+
+        Returns:
+            Prima con fuente y fecha, o ``None``.
+        """
+        if country is None:
+            return None
+        return self.country_risk_premium_by_country.get(country.lower())
 
     # Múltiplo de salida del fichero para un ticker; None si no hay.
     def exit_multiple_for(self, ticker: str) -> MarketRate | None:
@@ -173,10 +221,11 @@ class MarketInputs:
             ticker: Ticker de la compañía (no distingue mayúsculas).
 
         Returns:
-            Configuración con modo (``yahoo`` si no se indica en ningún sitio) y valor.
+            Configuración con modo (``bottom-up`` si no se indica en ningún sitio) y
+            valor.
         """
         own = self.beta_by_ticker.get(ticker.upper(), BetaSettings())
-        mode = own.mode or self.beta.mode or BetaMode.YAHOO
+        mode = own.mode or self.beta.mode or BetaMode(DEFAULT_BETA_MODE)
         return BetaSettings(mode=mode, value=own.value or self.beta.value)
 
     # Valida prima de riesgo positiva y Kd por defecto no negativo.
@@ -235,7 +284,9 @@ def resolve_beta(
     Raises:
         ValueError: Si el modo no permite obtener una beta válida, indicando el motivo.
     """
-    mode = settings.mode or BetaMode.YAHOO
+    mode = settings.mode or BetaMode(DEFAULT_BETA_MODE)
+    if mode is BetaMode.BOTTOM_UP:
+        raise ValueError("El modo bottom-up necesita la compañía: usa compute_cost_of_equity")
     manual = settings.value
     hint = (
         f'Añade en config/data/market_inputs.toml una sección [beta."{ticker.upper()}"] '
@@ -265,49 +316,202 @@ def resolve_beta(
 
 
 @dataclass(frozen=True, slots=True)
+class KeFloor:
+    """Suelo del coste de los fondos propios por riesgo país.
+
+    Attributes:
+        country: País de la empresa según la fuente.
+        country_risk_premium: Prima de riesgo país (CRP) con fuente y fecha: lo que se
+            exige de más por el riesgo soberano y macroeconómico del país.
+        value: Ke mínimo = rf + 1 · PRM + CRP: lo que rinde el mercado del país; ninguna
+            acción se descuenta a menos.
+    """
+
+    country: str
+    country_risk_premium: MarketRate
+    value: float
+
+
+# Suelo de Ke: rf + 1 · PRM + prima de riesgo país del país de la empresa.
+def cost_of_equity_floor(company: Company, market_inputs: MarketInputs) -> KeFloor:
+    """Calcula el suelo de Ke por riesgo país (``docs/metodologia.md`` §4).
+
+    Args:
+        company: Compañía con su país.
+        market_inputs: rf, PRM y primas de riesgo país.
+
+    Returns:
+        Suelo con la prima país utilizada.
+
+    Raises:
+        ValueError: Si la fuente no publica el país o el fichero no tiene su prima.
+    """
+    country = company.info.country
+    if country is None:
+        raise ValueError(
+            f"{company.info.ticker}: la fuente no publica el país, necesario para el suelo de Ke"
+        )
+    crp = market_inputs.country_risk_premium_for(country)
+    if crp is None:
+        raise ValueError(
+            f'{company.info.ticker}: falta la prima de riesgo país de "{country}". Añade en '
+            f'config/data/market_inputs.toml [country_risk_premium."{country}"] con value '
+            "(0 si el país no tiene prima), source y date"
+        )
+    value = (
+        market_inputs.risk_free_rate.value
+        + KE_FLOOR_BETA * market_inputs.market_risk_premium.value
+        + crp.value
+    )
+    return KeFloor(country, crp, value)
+
+
+# Beta bottom-up: sectorial reapalancada; sin sectorial, la de la fuente ajustada por Blume.
+def bottom_up_beta(
+    company: Company, market_inputs: MarketInputs, settings: BetaSettings
+) -> BetaChoice:
+    """Calcula la beta del modo ``bottom-up`` (``docs/metodologia.md`` §4).
+
+    - Con beta sectorial: β = βu · (1 + (1 − t) · D / E), con D la deuda total
+      contable, E la capitalización y t la mediana de los tipos efectivos. En
+      ``fcfe_fin`` la beta sectorial se usa sin reapalancar: la deuda de una financiera
+      es su materia prima y las betas de bancos y aseguradoras ya se publican así.
+    - Sin beta sectorial: β = 0,67 · β_fuente + 0,33 (Blume); si la fuente no publica
+      una beta válida, la del fichero (``[beta]``) si existe.
+
+    Args:
+        company: Compañía (claves de sector e industria, balance, impuestos y beta).
+        market_inputs: Betas sectoriales.
+        settings: Configuración efectiva de beta del ticker (beta de respaldo).
+
+    Returns:
+        Beta elegida con su origen.
+
+    Raises:
+        ValueError: Si no hay beta sectorial ni una beta de la fuente o del fichero válida.
+    """
+    info, balance = company.info, company.balance
+    mode = BetaMode.BOTTOM_UP
+    sector = market_inputs.sector_beta_for(info.industry_key, info.sector_key)
+    if sector is not None:
+        key, unlevered = sector
+        if info.valuation_model is ValuationModel.FCFE_FIN:
+            source = f"Beta sectorial «{key}» sin reapalancar (financiera): {unlevered.source}"
+            return BetaChoice(
+                unlevered.value, source, unlevered.date, mode, balance.beta, None, unlevered.value
+            )
+        debt = balance.total_debt
+        if debt is None:
+            raise ValueError(f"{info.ticker}: falta la deuda total para reapalancar la beta")
+        equity = balance.share_price * balance.diluted_shares
+        t = tax_rates(company.debt_cost_data, "el t de la beta").median
+        beta = unlevered.value * (1.0 + (1.0 - t) * debt / equity)
+        source = (
+            f"Bottom-up: βu «{key}» {unlevered.value:g} ({unlevered.source}) reapalancada con "
+            f"D/E {debt / equity:.3f} y t {t:.2%}"
+        )
+        return BetaChoice(beta, source, unlevered.date, mode, balance.beta, None, unlevered.value)
+
+    missing = f"sin beta sectorial para «{info.industry_key or '—'}» ni «{info.sector_key or '—'}»"
+    source_beta = balance.beta
+    if source_beta is not None and source_beta >= 0:
+        adjusted = BLUME_WEIGHT * source_beta + (1.0 - BLUME_WEIGHT) * 1.0
+        source = (
+            f"{info.source} ajustada por Blume "
+            f"({BLUME_WEIGHT:g} · {source_beta:g} + {1 - BLUME_WEIGHT:g})"
+        )
+        return BetaChoice(adjusted, source, info.data_date, mode, source_beta, missing)
+    problem = (
+        "no publica beta" if source_beta is None else f"da una beta negativa ({source_beta:g})"
+    )
+    manual = settings.value
+    if manual is None:
+        raise ValueError(
+            f'{info.ticker}: {missing} y {info.source} {problem}. Añade [sector_beta."'
+            f'{info.industry_key or info.sector_key or "clave"}"] o [beta."{info.ticker}"] en '
+            "config/data/market_inputs.toml"
+        )
+    return BetaChoice(
+        manual.value,
+        manual.source,
+        manual.date,
+        mode,
+        source_beta,
+        f"{missing} y la fuente {problem}",
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class CostOfEquityResult:
     """Coste de los fondos propios con sus componentes, para trazabilidad.
 
     Attributes:
         market_inputs: rf y PRM utilizados, con fuente y fecha.
         beta_choice: Beta utilizada y su origen (modo, fuente, fecha y motivo).
-        cost_of_equity: Ke = rf + β · PRM: rentabilidad que exige el accionista.
-        warnings: Avisos (p. ej. se usa la beta del fichero porque la de la fuente falta).
+        cost_of_equity: Ke utilizado: el mayor entre el CAPM y el suelo; rentabilidad
+            que exige el accionista.
+        warnings: Avisos (p. ej. se usa la beta de respaldo, o se aplica el suelo).
+        capm: Ke por CAPM, rf + β · PRM, antes del suelo; ``None`` = igual a
+            ``cost_of_equity`` (resultados construidos sin suelo).
+        floor: Suelo de Ke por riesgo país; ``None`` si no se calculó.
     """
 
     market_inputs: MarketInputs
     beta_choice: BetaChoice
     cost_of_equity: float
     warnings: tuple[str, ...] = ()
+    capm: float | None = None
+    floor: KeFloor | None = None
+
+    # True si el suelo eleva Ke por encima del CAPM.
+    @property
+    def floor_applied(self) -> bool:
+        """Indica si Ke es el suelo y no el CAPM."""
+        return self.capm is not None and self.cost_of_equity > self.capm
 
 
-# Ke de la compañía por CAPM, con la beta elegida según [beta] de market_inputs.
+# Ke de la compañía: CAPM con la beta según [beta] y suelo por riesgo país.
 def compute_cost_of_equity(company: Company, market_inputs: MarketInputs) -> CostOfEquityResult:
     """Calcula el coste de los fondos propios de la compañía.
 
+    Ke = max(rf + β · PRM, suelo), con el suelo rf + 1 · PRM + prima de riesgo país.
+
     Args:
-        company: Compañía con la beta publicada por la fuente (si la hay).
-        market_inputs: rf, PRM y configuración de la beta.
+        company: Compañía con la beta publicada por la fuente (si la hay), su país y sus
+            claves de sector e industria.
+        market_inputs: rf, PRM, configuración de la beta, betas sectoriales y primas de
+            riesgo país.
 
     Returns:
-        Ke con la beta utilizada y avisos.
+        Ke con la beta utilizada, el CAPM, el suelo y avisos.
 
     Raises:
-        ValueError: Si el modo de beta no permite obtener una beta válida.
+        ValueError: Si el modo de beta no permite obtener una beta válida, o falta la
+            prima de riesgo país del país de la empresa.
     """
-    choice = resolve_beta(
-        company.info.ticker,
-        company.balance.beta,
-        market_inputs.beta_settings_for(company.info.ticker),
-        company.info.source,
-        company.info.data_date,
-    )
-    warnings = (
-        (f"Se usa la beta del fichero ({choice.value:g}): {choice.reason}",)
-        if choice.reason is not None
-        else ()
-    )
-    ke = cost_of_equity(
+    settings = market_inputs.beta_settings_for(company.info.ticker)
+    if settings.mode is BetaMode.BOTTOM_UP:
+        choice = bottom_up_beta(company, market_inputs, settings)
+    else:
+        choice = resolve_beta(
+            company.info.ticker,
+            company.balance.beta,
+            settings,
+            company.info.source,
+            company.info.data_date,
+        )
+    warnings: list[str] = []
+    if choice.reason is not None:
+        warnings.append(f"Beta de respaldo ({choice.value:.3f}, {choice.source}): {choice.reason}")
+    capm = cost_of_equity(
         market_inputs.risk_free_rate.value, choice.value, market_inputs.market_risk_premium.value
     )
-    return CostOfEquityResult(market_inputs, choice, ke, warnings)
+    floor = cost_of_equity_floor(company, market_inputs)
+    if floor.value > capm:
+        warnings.append(
+            f"Ke por CAPM ({capm:.2%}) por debajo del suelo de {floor.country} ({floor.value:.2%} "
+            f"= rf + PRM + prima país {floor.country_risk_premium.value:.2%}): se usa el suelo"
+        )
+    return CostOfEquityResult(
+        market_inputs, choice, max(capm, floor.value), tuple(warnings), capm, floor
+    )

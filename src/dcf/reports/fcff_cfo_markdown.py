@@ -54,11 +54,11 @@ def _history_section(
         row(
             "Margen EBIT",
             [pct(ebit[y] / by_year[y].revenue) if y in ebit else "—" for y in years],
-            pct(float(np.mean([ebit[y] / by_year[y].revenue for y in years if y in ebit]))),
+            pct(float(np.median([ebit[y] / by_year[y].revenue for y in years if y in ebit]))),
         ),
         row(f"− Intereses ({unit})", [amount(by_year[y].interest_expense, scale) for y in years]),
         row(
-            "t efectivo (columna Media: mediana)",
+            "t efectivo",
             [pct(r.tax_rate_by_year.get(y)) for y in years],
             pct(t),
         ),
@@ -101,7 +101,7 @@ def _history_section(
     return (
         "## 3. Históricos y proyecciones\n\n"
         "### 3.1 Históricos\n\n"
-        + table(["Partida", *map(str, years), "Media"], hist_rows)
+        + table(["Partida", *map(str, years), "Mediana"], hist_rows)
         + "\n"
         + warnings_block("Años excluidos de alguna media", r.warnings)
         + "\n### 3.2 Proyecciones\n\n"

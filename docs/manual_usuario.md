@@ -129,8 +129,19 @@ source = "Damodaran, ERP implícita"
 date = 2026-11-01
 ```
 
+Y la **prima de riesgo país** de cada país de las empresas que valores (el país de la sede
+según Yahoo, en inglés), que fija el suelo de Ke = rf + PRM + prima país:
+
+```toml
+[country_risk_premium."Spain"]
+value = 0.0               # 0 si la PRM de arriba ya es la total del país (no la cuentes dos veces)
+source = "Damodaran, ctryprem: ya incluida en la PRM de España"
+date = 2026-11-20
+```
+
 Las cifras de este ejemplo son ilustrativas: pon las tuyas con su fuente y su fecha, que
-aparecerán en el informe. El resto de secciones del fichero son opcionales (ver §7.2).
+aparecerán en el informe. Sin la prima del país de una empresa, su valoración da error.
+El resto de secciones del fichero son opcionales (ver §7.2).
 Este fichero es tuyo: no se sube al repositorio.
 
 ### 3.2 Crecimiento terminal
@@ -323,6 +334,8 @@ Cada dato lleva `value`, `source` y `date`, que se muestran en el informe. Secci
 | `[risk_free_rate]` | Sí | Rentabilidad libre de riesgo (CAPM y límite de g) | §4 |
 | `[market_risk_premium]` | Sí | Prima de riesgo de mercado (CAPM) | §4 |
 | `[default_cost_of_debt]` | No | Coste de la deuda para estimar los intereses cuando Yahoo no los publica | §1 |
+| `[country_risk_premium."PAÍS"]` | Sí, por país | Prima de riesgo país del suelo de Ke | §4 |
+| `[sector_beta."CLAVE"]` | No | Beta desapalancada por industria o sector (modo `bottom-up`) | §4 |
 | `[beta]` y `[beta."TICKER"]` | No | Cómo se elige la beta (`mode`) y beta propia general o por ticker | §4 |
 | `[discount_rate."TICKER"]` | No | Fuerza el WACC o Ke de un ticker | §4 |
 | `[exit_multiple."TICKER"]` | No | Múltiplo de salida de un ticker (`vt_mult`) | §12 |
@@ -332,7 +345,8 @@ Cada dato lleva `value`, `source` y `date`, que se muestran en el informe. Secci
 
 | `mode` | Beta que se usa |
 |---|---|
-| `yahoo` (defecto) | La de Yahoo; error si no la publica o es negativa |
+| `bottom-up` (defecto) | La beta sectorial desapalancada de `[sector_beta]`, reapalancada con la deuda de la empresa; si no hay para su industria ni su sector, la de Yahoo ajustada por Blume (0,67 · β + 0,33); si Yahoo no la publica o es negativa, la de `[beta]` |
+| `yahoo` | La de Yahoo sin ajustar; error si no la publica o es negativa |
 | `fichero` | Siempre la del fichero |
 | `yahoo-fichero` | La de Yahoo; si falta o es negativa, la del fichero (el informe dice por qué) |
 
@@ -352,6 +366,18 @@ value = 0.10
 source = "RONIC ≈ WACC a largo plazo (supuesto prudente)"
 date = 2026-11-21
 ```
+
+Beta sectorial desapalancada (modo `bottom-up`), por clave de industria o de sector de
+Yahoo (se ven en la sección 1 del informe o en `meta.json` de la caché):
+
+```toml
+[sector_beta."engineering-construction"]
+value = 0.85
+source = "Damodaran, Unlevered beta, Engineering/Construction (Europa)"
+date = 2026-01-05
+```
+
+Ke nunca baja del **suelo** rf + PRM + prima país del país de la empresa (metodología §4).
 
 Las cifras son ilustrativas. **Precedencia** de los datos forzables (tasa, múltiplo, RONIC):
 argumento `--set` (todos los tickers) > sección del ticker en este fichero > calculado
@@ -384,6 +410,7 @@ Lo que no encaja con ninguna regla es industrial (metodología §1, «Tipo de em
 last_flow_deviation = 0.33    # último flujo histórico a más de un 33 % de la media anterior
 implied_growth_gap = 0.0075   # g implícito del VT a más de 0,75 puntos del g supuesto
 ronic_to_rate = 2.0           # RONIC (o ROE) mayor que 2 veces la tasa de descuento
+scenario_growth_gap = 0.01    # excluye bajista/alcista con g implícito a más de 1 punto
 ```
 
 Es opcional: sin él se usan esos mismos valores. Con `--thresholds otro.toml` se usa otro
@@ -498,6 +525,9 @@ configurados, no que la valoración sea correcta.
 | Años excluidos de alguna media | Años con pérdidas o un tipo impositivo sin sentido no entran en la media (§2) |
 | Estimación de analistas ausente | Se proyecta con el crecimiento histórico medio (§3) |
 | Escenario no válido | En ese escenario g ≥ tasa o g ≥ rf; el resto de la valoración sigue (§8) |
+| Escenario excluido por g implícito | El VT del bajista o el alcista no encaja con su flujo del año N (g implícito a más de 1 punto de su g); se deja vacío (§8) |
+| Beta de respaldo | No hay beta sectorial para la industria: se usa la de Yahoo ajustada por Blume (§4) |
+| Ke por CAPM por debajo del suelo | Se descuenta al suelo rf + PRM + prima país (§4) |
 
 ---
 
@@ -579,7 +609,8 @@ dcf ITX.MC SAN.MC --no-extras
 | `No existe … market_inputs.toml` o faltan claves | No has creado o completado el fichero de datos de mercado | §3.1 |
 | `Falta el crecimiento terminal` | No hay `terminal_growth` en `settings.toml` ni `--set g=` | §3.2 |
 | `terminal_growth (…) debe ser menor que el WACC` (o Ke, o rf) | g ≥ tasa de descuento o g ≥ rf | Baja g o revisa rf y la tasa |
-| Beta negativa o ausente | Yahoo publica una beta negativa o ninguna | `[beta]` con `mode = "yahoo-fichero"` y una beta propia (§7.2) |
+| Beta negativa o ausente | Yahoo publica una beta negativa o ninguna | Una beta sectorial en `[sector_beta]` o una propia en `[beta."TICKER"]` (§7.2) |
+| `falta la prima de riesgo país de "…"` | No hay `[country_risk_premium]` para el país de la empresa | Añádela en `market_inputs.toml` (0 si no tiene prima) |
 | `Falta el múltiplo de salida para vt_mult` | `vt_mult` sin múltiplo | `--set exit_multiple=` o `[exit_multiple."TICKER"]` |
 | `Falta el RONIC para gordon_value_driver` | No se puede calcular el ROIC histórico (faltan fondos propios o caja) | `--set ronic=` o `[ronic."TICKER"]` |
 | `Yahoo: falta la fila '…'` | Yahoo no publica un dato obligatorio para ese modelo | Prueba otro modelo (p. ej. `fcff_cfo` no necesita D&A ni circulante) o revisa el ticker |

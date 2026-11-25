@@ -16,6 +16,29 @@ BETA_KEYS = frozenset({"mode", "value", "source", "date"})
 """Claves admitidas en ``[beta]`` y en cada ``[beta."TICKER"]``."""
 
 
+# Sección por clave en minúsculas, con valor ≥ 0 ([sector_beta."x"], [country_risk_premium."X"]).
+def _parse_named_rates(data: dict[str, Any], path: Path, section: str) -> dict[str, MarketRate]:
+    raw: dict[str, Any] = data.get(section, {})
+    rates: dict[str, MarketRate] = {}
+    for key, table in raw.items():
+        label = f'{section}."{key}"'
+        if not isinstance(table, dict):
+            raise ValueError(
+                f'{path}: [{section}] solo admite subsecciones, p. ej. [{section}."clave"] '
+                f"(clave {key!r})"
+            )
+        unknown = sorted(set(table) - {"value", "source", "date"})
+        if unknown:
+            raise ValueError(f"{path}: claves desconocidas {unknown} en [{label}]")
+        rate = _parse_rate({label: table}, label, path)
+        if rate.value < 0:
+            raise ValueError(
+                f"{path}: [{label}].value no puede ser negativo, recibido {rate.value}"
+            )
+        rates[key.strip().lower()] = rate
+    return rates
+
+
 # Convierte una sección TOML {value, source, date} en MarketRate, con errores claros.
 def _parse_rate(data: dict[str, Any], section: str, path: Path) -> MarketRate:
     if section not in data:
@@ -93,8 +116,8 @@ def _parse_discount_rates(
 def load_market_inputs(path: Path = DEFAULT_MARKET_INPUTS_PATH) -> MarketInputs:
     """Carga rf, PRM y, si están, Kd por defecto y configuración de beta.
 
-    La sección ``[beta]`` es opcional (sin ella, modo ``yahoo``). Admite ``mode``
-    (``yahoo``, ``fichero`` o ``yahoo-fichero``), una beta general con ``value``,
+    La sección ``[beta]`` es opcional (sin ella, modo ``bottom-up``). Admite ``mode``
+    (``bottom-up``, ``yahoo``, ``fichero`` o ``yahoo-fichero``), una beta general con ``value``,
     ``source`` y ``date``, y subtablas por ticker ``[beta."REP.MC"]`` con las mismas
     claves, que prevalecen sobre la general.
 
@@ -128,4 +151,6 @@ def load_market_inputs(path: Path = DEFAULT_MARKET_INPUTS_PATH) -> MarketInputs:
         ),
         beta=beta,
         beta_by_ticker=beta_by_ticker,
+        sector_beta_by_key=_parse_named_rates(data, path, "sector_beta"),
+        country_risk_premium_by_country=_parse_named_rates(data, path, "country_risk_premium"),
     )

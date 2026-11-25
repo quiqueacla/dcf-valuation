@@ -55,7 +55,8 @@ def test_proyeccion_con_estimacion_baja_y_alta(ranged: Company) -> None:
     assert [f.revenue for f in low.flows[:2]] == [1400.0, 1480.0]
     assert [f.revenue for f in high.flows[:2]] == [1500.0, 1620.0]
     g1, g2 = 1400 / 1331 - 1, 1480 / 1400 - 1
-    assert low.projection_growth == pytest.approx((0.30 + g1 + g2) / 5, rel=REL)
+    assert low.projection_growth == pytest.approx(0.10, rel=REL)  # mediana de {10 % × 3, g1, g2}
+    assert g1 < 0.10 and g2 < 0.10
 
 
 def test_falta_estimacion_alta_usa_la_media(company: Company) -> None:

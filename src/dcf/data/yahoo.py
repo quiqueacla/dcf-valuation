@@ -370,6 +370,11 @@ def _info_text(info: dict[str, Any], key: str) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
+# Clave en minúsculas (o None).
+def _lower(value: str | None) -> str | None:
+    return None if value is None else value.lower()
+
+
 # Sector, industria y tipo de empresa; aviso si Yahoo no publica sector ni industria.
 def _classification(
     info: dict[str, Any], rules: CompanyTypeRules | None, warnings: list[str]
@@ -632,6 +637,9 @@ def _build_company(
         sector=sector,
         industry=industry,
         company_type=company_type,
+        country=_info_text(raw.info, "country"),
+        sector_key=_lower(_info_text(raw.info, "sectorKey")),
+        industry_key=_lower(_info_text(raw.info, "industryKey")),
         valuation_model=model,
         terminal_method=terminal,
     )

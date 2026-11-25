@@ -79,6 +79,7 @@ def _year(fiscal_year: int, revenue: float) -> HistoricalYear:
 @pytest.fixture
 def industrial() -> Company:
     info = CompanyInfo(
+        country="Spain",
         ticker="IND",
         name="Industrial Sintética S.A.",
         source="fixture",

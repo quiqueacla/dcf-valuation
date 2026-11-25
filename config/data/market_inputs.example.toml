@@ -26,9 +26,33 @@
 # source = ""
 # date = AAAA-MM-DD
 
-# OPCIONAL. Beta de la acción. Sin esta sección se usa la de Yahoo (modo "yahoo").
+# OBLIGATORIO por país. Prima de riesgo país del suelo de Ke: Ke >= rf + PRM + prima país.
+# La clave es el país de la sede según Yahoo (info["country"], en inglés: "Spain",
+# "United States", "Germany"...). value = 0 si el país no tiene prima.
+# Cuidado: si market_risk_premium ya es la prima total del país (p. ej. la "Total Equity
+# Risk Premium" de Damodaran para España), pon aquí 0 para no contarla dos veces.
+# https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ctryprem.html
+# [country_risk_premium."Spain"]
+# value =
+# source = ""
+# date = AAAA-MM-DD
+
+# OPCIONAL. Betas sectoriales DESAPALANCADAS para el modo de beta "bottom-up" (por defecto).
+# Clave: industryKey de Yahoo (p. ej. "engineering-construction") o, si no está, sectorKey
+# (p. ej. "industrials"); se ven en el informe y en data/cache/<TICKER>/<fecha>/meta.json.
+# Se reapalancan con el D/E de cada empresa. Sin beta sectorial se usa la de Yahoo ajustada
+# por Blume (0,67 · beta + 0,33).
+# https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/Betas.html (Unlevered beta)
+# [sector_beta."engineering-construction"]
+# value =
+# source = ""
+# date = AAAA-MM-DD
+
+# OPCIONAL. Beta de la acción. Sin esta sección se usa el modo "bottom-up".
 # mode:
-#   "yahoo"          solo la de Yahoo; error si no la publica o es negativa.
+#   "bottom-up"      beta sectorial reapalancada; sin ella, Yahoo ajustada por Blume; si
+#                    Yahoo no la publica o es negativa, la beta de esta sección.
+#   "yahoo"          solo la de Yahoo sin ajustar; error si no la publica o es negativa.
 #   "fichero"        siempre la del fichero (override de la de Yahoo).
 #   "yahoo-fichero"  la de Yahoo; si no la publica o es negativa, la del fichero
 #                    (el informe indica el motivo).

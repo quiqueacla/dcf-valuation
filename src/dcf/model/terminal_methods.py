@@ -206,6 +206,13 @@ def terminal_value(
             f"del g supuesto ({g:.2%}): el VT no encaja con el flujo del año N; revisa "
             f"{'el múltiplo' if method is TerminalMethod.MULTIPLE else f'el {basis.return_name}'}"
         )
+        if abs(implied - g) > options.thresholds.scenario_growth_gap:
+            warnings[-1] += (
+                f". Supera el umbral de exclusión de escenarios "
+                f"({options.thresholds.scenario_growth_gap * 100:.2f} puntos): un escenario "
+                "bajista o alcista así se excluiría; la valoración central se mantiene, pero "
+                "es poco fiable"
+            )
     metric = basis.metric_last
     implied_multiple = value / metric if metric is not None and metric > 0 else None
     return TerminalValueResult(

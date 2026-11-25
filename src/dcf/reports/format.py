@@ -239,13 +239,40 @@ def cost_of_equity_rows(equity: CostOfEquityResult) -> list[list[str]]:
     beta = equity.beta_choice
     beta_origin = f"{beta.source} ({beta.date:%Y-%m-%d}); modo {beta.mode.value}"
     if beta.reason is not None:
-        beta_origin += f"; se usa la del fichero porque {beta.reason}"
-    return [
+        beta_origin += f"; respaldo porque {beta.reason}"
+    rows = [
         ["Rentabilidad libre de riesgo (rf)", pct(rf.value), f"{rf.source} ({rf.date:%Y-%m-%d})"],
         ["Prima de riesgo de mercado (PRM)", pct(prm.value), f"{prm.source} ({prm.date:%Y-%m-%d})"],
-        ["Beta (β)", num(beta.value, 3), beta_origin],
-        ["**Coste del capital Ke = rf + β · PRM**", f"**{pct(equity.cost_of_equity)}**", "CAPM"],
+        [
+            "Beta publicada por la fuente",
+            "—" if beta.source_beta is None else num(beta.source_beta, 3),
+            "Regresión de la fuente (informativa si no se usa)",
+        ],
+        ["Beta utilizada (β)", num(beta.value, 3), beta_origin],
     ]
+    floor = equity.floor
+    if floor is None:
+        rows.append(
+            ["**Coste del capital Ke = rf + β · PRM**", f"**{pct(equity.cost_of_equity)}**", "CAPM"]
+        )
+        return rows
+    crp = floor.country_risk_premium
+    capm = equity.capm if equity.capm is not None else equity.cost_of_equity
+    rows += [
+        ["Ke por CAPM = rf + β · PRM", pct(capm), "CAPM"],
+        [
+            f"Prima de riesgo país ({floor.country})",
+            pct(crp.value),
+            f"{crp.source} ({crp.date:%Y-%m-%d})",
+        ],
+        ["Suelo de Ke = rf + PRM + prima país", pct(floor.value), "Riesgo país (β = 1)"],
+        [
+            "**Coste del capital Ke = máx(CAPM, suelo)**",
+            f"**{pct(equity.cost_of_equity)}**",
+            "Suelo aplicado" if equity.floor_applied else "CAPM (por encima del suelo)",
+        ],
+    ]
+    return rows
 
 
 # Nota de la tasa forzada: valor usado, fuente y tasa calculada (cadena vacía si no está forzada).
@@ -495,6 +522,6 @@ def roic_rows(
         [
             "ROIC = NOPAT / capital invertido inicial",
             *[pct(roic.by_year.get(y)) for y in years],
-            pct(roic.mean),
+            pct(roic.median),
         ],
     ]

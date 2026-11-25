@@ -21,7 +21,8 @@ class HistoricalReturn:
     Attributes:
         name: "ROIC" o "ROE".
         by_year: Rentabilidad de cada ejercicio con dato válido.
-        mean: Media de los años válidos; ``None`` si no hay ninguno.
+        median: Mediana de los años válidos (un año atípico no la arrastra);
+            ``None`` si no hay ninguno.
         warnings: Años excluidos y motivo.
         profit_by_year: Beneficio del numerador de cada ejercicio, en EUR: NOPAT =
             EBIT · (1 − t) en el ROIC (beneficio operativo después de impuestos, sin
@@ -33,25 +34,25 @@ class HistoricalReturn:
 
     name: str
     by_year: dict[int, float]
-    mean: float | None
+    median: float | None
     warnings: tuple[str, ...] = ()
     profit_by_year: dict[int, float] = field(default_factory=dict)
     capital_by_year: dict[int, float] = field(default_factory=dict)
 
-    # Media como dato con origen, para el value driver.
+    # Mediana como dato con origen, para el value driver.
     def as_rate(self, data_date: datetime) -> MarketRate | None:
-        """Devuelve la media como :class:`MarketRate` con su origen.
+        """Devuelve la mediana como :class:`MarketRate` con su origen.
 
         Args:
             data_date: Fecha de los datos de la compañía, en UTC.
 
         Returns:
-            Media con fuente «<nombre> histórico medio (años)», o ``None`` sin datos.
+            Mediana con fuente «<nombre> histórico mediano (años)», o ``None`` sin datos.
         """
-        if self.mean is None:
+        if self.median is None:
             return None
         years = ", ".join(map(str, sorted(self.by_year)))
-        return MarketRate(self.mean, f"{self.name} histórico medio ({years})", data_date)
+        return MarketRate(self.median, f"{self.name} histórico mediano ({years})", data_date)
 
 
 # ROIC_i = NOPAT_i / capital invertido_{i−1}; capital invertido = deuda + FP − caja.
@@ -91,8 +92,8 @@ def historical_roic(company: Company, tax_rate: float) -> HistoricalReturn:
             warnings.append(f"{curr.fiscal_year} excluido del ROIC: capital invertido inicial ≤ 0")
             continue
         roic[curr.fiscal_year] = nopat[curr.fiscal_year] / start
-    mean = float(np.mean(list(roic.values()))) if roic else None
-    return HistoricalReturn("ROIC", roic, mean, tuple(warnings), nopat, invested)
+    median = float(np.median(list(roic.values()))) if roic else None
+    return HistoricalReturn("ROIC", roic, median, tuple(warnings), nopat, invested)
 
 
 # ROE_i = Net Income_i / fondos propios_{i−1}.
@@ -115,5 +116,5 @@ def historical_roe(company: Company) -> HistoricalReturn:
             )
             continue
         roe[curr.fiscal_year] = curr.net_income / equity
-    mean = float(np.mean(list(roe.values()))) if roe else None
-    return HistoricalReturn("ROE", roe, mean, tuple(warnings))
+    median = float(np.median(list(roe.values()))) if roe else None
+    return HistoricalReturn("ROE", roe, median, tuple(warnings))

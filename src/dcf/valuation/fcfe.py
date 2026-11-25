@@ -146,7 +146,15 @@ def value_company(
         value_per_share=value_per_share(equity, shares),
         sensitivity=sensitivity_grid(value_for, ke, g, rf),
         scenarios=(
-            compute_equity_scenarios(company, flows_for, ke, assumptions, scenario_config, minority)
+            compute_equity_scenarios(
+                company,
+                flows_for,
+                ke,
+                assumptions,
+                scenario_config,
+                minority,
+                options.thresholds.scenario_growth_gap,
+            )
             if scenario_config is not None
             else ()
         ),

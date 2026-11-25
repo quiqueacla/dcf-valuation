@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from dcf.defaults import IMPLIED_GROWTH_GAP, LAST_FLOW_DEVIATION, RONIC_TO_RATE
+from dcf.defaults import IMPLIED_GROWTH_GAP, LAST_FLOW_DEVIATION, RONIC_TO_RATE, SCENARIO_GROWTH_GAP
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,15 +27,24 @@ class WarningThresholds:
             entre el g implícito en el valor terminal y el g supuesto.
         ronic_to_rate: Cociente máximo entre el RONIC (o ROE) del value driver y la tasa
             de descuento; por encima, la ventaja competitiva supuesta es muy alta.
+        scenario_growth_gap: Diferencia máxima, en puntos (0.01 = 1 punto), entre el g
+            implícito y el g de un escenario bajista o alcista; por encima, el
+            escenario se excluye (no válido). En la valoración central solo se avisa.
     """
 
     last_flow_deviation: float = LAST_FLOW_DEVIATION
     implied_growth_gap: float = IMPLIED_GROWTH_GAP
     ronic_to_rate: float = RONIC_TO_RATE
+    scenario_growth_gap: float = SCENARIO_GROWTH_GAP
 
     # Valida umbrales finitos y positivos.
     def __post_init__(self) -> None:
-        for name in ("last_flow_deviation", "implied_growth_gap", "ronic_to_rate"):
+        for name in (
+            "last_flow_deviation",
+            "implied_growth_gap",
+            "ronic_to_rate",
+            "scenario_growth_gap",
+        ):
             value: float = getattr(self, name)
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} debe ser un número positivo, recibido {value!r}")

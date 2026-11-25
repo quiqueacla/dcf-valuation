@@ -14,3 +14,7 @@ implied_growth_gap = 0.0075
 # Aviso si el RONIC (ROE en FCFE) del value driver supera este múltiplo de la tasa de
 # descuento: supone una ventaja competitiva muy duradera.
 ronic_to_rate = 2.0
+
+# Un escenario bajista o alcista se excluye (no válido) si su g implícito difiere del g del
+# escenario más que estos puntos. En la valoración central solo se avisa.
+scenario_growth_gap = 0.01

@@ -30,6 +30,14 @@ date = 2026-11-17
 value = 0.05
 source = "fixture prm"
 date = 2026-11-01
+
+[beta]
+mode = "yahoo"
+
+[country_risk_premium."Spain"]
+value = 0.0
+source = "fixture crp"
+date = 2026-11-01
 """
 
 SETTINGS = """
@@ -62,7 +70,7 @@ def test_informe_tiene_las_cuatro_secciones(company: Company, market_inputs: Mar
         assert title in md
     assert "no es una recomendación de inversión" in md
     assert "**8,13 %**" in md  # WACC 8,125 %
-    assert "**30,37 €**" in md  # valor por acción del caso de referencia
+    assert "**30,99 €**" in md  # valor por acción del caso de referencia
     assert "**Bajista**" in md and "**Neutro**" in md and "**Alcista**" in md
     assert "fixture" in md  # fuente de rf / datos
     assert "dcf 0.1.0" in md

@@ -116,7 +116,7 @@ def _history_section(
     return (
         "## 3. Históricos y proyecciones\n\n"
         "### 3.1 Históricos\n\n"
-        + table(["Partida", *map(str, years), "Media"], hist_rows)
+        + table(["Partida", *map(str, years), "Mediana"], hist_rows)
         + "\n\n### 3.2 Proyecciones\n\n"
         + "FCFE_t = Net Income_t − g_t · FP_t−1: se retiene el beneficio necesario para que "
         "los fondos propios crezcan al ritmo de las ventas.\n\n"

@@ -1,7 +1,7 @@
 """Modelo FCFF (por defecto): FCFF desde el EBIT con márgenes sobre ventas. Puro, sin I/O.
 
 FCFF = EBIT · (1 − t) + D&A − Capex − ΔNWC, con NWC = clientes + existencias − proveedores
-(circulante comercial). Se proyecta con el crecimiento de ventas y las medias históricas de
+(circulante comercial). Se proyecta con el crecimiento de ventas y las medianas históricas de
 margen EBIT, D&A/ventas, Capex/ventas y NWC/ventas; t es la mediana de los tipos efectivos.
 Fórmulas en ``docs/metodologia.md`` §11 (``docs/dcf_metodos.md`` §1.1).
 Tasas en decimal (0.08 = 8 %), importes en EUR.
@@ -43,12 +43,12 @@ class FcffRatios:
         fcff_by_year: FCFF histórico con el mismo criterio (desde el segundo ejercicio, que
             ya tiene ΔNWC): EBIT·(1−t) + D&A − Capex − ΔNWC.
         taxes: Tipos efectivos por año y su mediana (t del NOPAT).
-        average_revenue_growth: Media de los crecimientos históricos.
-        average_net_margin: Media de los márgenes netos (para el Net Income informativo).
-        average_ebit_margin: Media de los márgenes EBIT.
-        average_da_to_revenue: Media de D&A / ventas.
-        average_capex_to_revenue: Media de Capex / ventas.
-        average_nwc_to_revenue: Media de NWC / ventas.
+        average_revenue_growth: Mediana de los crecimientos históricos.
+        average_net_margin: Mediana de los márgenes netos (para el Net Income informativo).
+        average_ebit_margin: Mediana de los márgenes EBIT.
+        average_da_to_revenue: Mediana de D&A / ventas.
+        average_capex_to_revenue: Mediana de Capex / ventas.
+        average_nwc_to_revenue: Mediana de NWC / ventas.
         warnings: Avisos (años excluidos del tipo impositivo).
     """
 
@@ -154,7 +154,7 @@ def compute_fcff_ratios(company: Company) -> FcffRatios:
             impuestos de cada ejercicio.
 
     Returns:
-        Ratios por ejercicio y medias.
+        Ratios por ejercicio y medianas.
 
     Raises:
         ValueError: Si falta algún dato necesario o ningún año tiene t válido.
@@ -191,8 +191,9 @@ def compute_fcff_ratios(company: Company) -> FcffRatios:
     growth = revenue_growth_by_year(company.historicals)
     margin = net_margin_by_year(company.historicals)
 
+    # Mediana: un año atípico no arrastra el ratio (metodología §2).
     def mean(values: dict[int, float]) -> float:
-        return float(np.mean(list(values.values())))
+        return float(np.median(list(values.values())))
 
     return FcffRatios(
         revenue_growth_by_year=growth,

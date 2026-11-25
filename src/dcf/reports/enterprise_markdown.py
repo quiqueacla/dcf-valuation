@@ -48,7 +48,7 @@ def wacc_section(company: Company, result: AnyFcffResult, scale: float, unit: st
     w = result.wacc
     if w is None:
         return title + note
-    ke = CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
+    ke = w.equity or CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
     kd_rows = [
         [
             str(d.fiscal_year),

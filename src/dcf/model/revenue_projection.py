@@ -126,12 +126,12 @@ def project_revenue(
     """Proyecta ventas y Net Income del horizonte explícito.
 
     Los años +1 y +2 usan las estimaciones de analistas si existen. El resto crece a
-    la media de los crecimientos históricos y de los implícitos en las estimaciones.
+    la mediana de los crecimientos históricos y de los implícitos en las estimaciones.
 
     Args:
         company: Compañía con históricos y, opcionalmente, estimaciones de ventas.
         historical_growth: Crecimientos históricos de ventas, en decimal.
-        average_net_margin: Margen neto medio histórico, en decimal.
+        average_net_margin: Margen neto histórico típico (mediana), en decimal.
         projection_years: Número de años a proyectar (≥ 1).
         estimate_case: Estimación de analistas a usar (baja, media o alta). Si la
             elegida no existe para un año, se usa la media.
@@ -154,7 +154,7 @@ def project_revenue(
         analyst_growth.append(revenue / previous - 1.0)
         previous = revenue
 
-    projection_growth = float(np.mean([*historical_growth, *analyst_growth]))
+    projection_growth = float(np.median([*historical_growth, *analyst_growth]))
 
     years: list[RevenueYear] = []
     previous = company.historicals[-1].revenue

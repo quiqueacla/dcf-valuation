@@ -64,13 +64,13 @@ def terminal_basis(
     """
     t = tax_rates(company.debt_cost_data, "el t del NOPAT").median
     ebit = {d.fiscal_year: d.ebit for d in company.debt_cost_data}
-    margin = float(np.mean([ebit[h.fiscal_year] / h.revenue for h in company.historicals]))
+    margin = float(np.median([ebit[h.fiscal_year] / h.revenue for h in company.historicals]))
     last = projection.flows[-1]
     da = [h.depreciation_amortization for h in company.historicals]
     ebitda: float | None = None
     if all(v is not None for v in da):
         da_ratio = float(
-            np.mean(
+            np.median(
                 [
                     v / h.revenue
                     for v, h in zip(da, company.historicals, strict=True)
@@ -128,7 +128,10 @@ def compute_scenarios(
         )
         return [f.fcff for f in p.flows], p.warnings, fn
 
-    return compute_fcff_scenarios(company, flows_for, wacc, risk_free_rate, assumptions, config)
+    gap = None if options is None else options.thresholds.scenario_growth_gap
+    return compute_fcff_scenarios(
+        company, flows_for, wacc, risk_free_rate, assumptions, config, gap
+    )
 
 
 # Valoración FCFF_CFO: ratios → proyección → WACC → VE → fondos propios → por acción.

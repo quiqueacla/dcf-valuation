@@ -24,7 +24,12 @@ from dcf.valuation.discounting import (
     value_per_share,
 )
 from dcf.valuation.enterprise import TerminalFn
-from dcf.valuation.scenarios import ScenarioConfig, ScenarioName, ScenarioResult
+from dcf.valuation.scenarios import (
+    ScenarioConfig,
+    ScenarioName,
+    ScenarioResult,
+    growth_gap_error,
+)
 
 EquityFlowsForCase = Callable[[EstimateCase], tuple[list[float], tuple[str, ...], TerminalFn]]
 """Función (estimación de ventas) → (FCFE proyectados, avisos, VT en función de (Ke, g))."""
@@ -93,6 +98,7 @@ def compute_equity_scenarios(
     assumptions: Assumptions,
     config: ScenarioConfig,
     minority_interest: float = 0.0,
+    max_growth_gap: float | None = None,
 ) -> tuple[ScenarioResult, ...]:
     """Calcula el valor por acción de los tres escenarios de un modelo FCFE.
 
@@ -106,6 +112,8 @@ def compute_equity_scenarios(
         config: Modos activos y desplazamientos.
         minority_interest: Minoritarios que se restan al valor descontado (fcfe desde el
             FCFF consolidado); 0 en fcfe_fin, cuyo Net Income ya es el atribuible.
+        max_growth_gap: Diferencia máxima entre el g implícito y el g de un escenario
+            bajista o alcista, en puntos; ``None`` = sin límite.
 
     Returns:
         Escenarios en orden bajista, neutro, alcista; los no válidos con ``error``.
@@ -123,6 +131,10 @@ def compute_equity_scenarios(
                 raise ValueError(f"Valor de los fondos propios no positivo ({equity:,.0f} EUR)")
         except ValueError as exc:
             results.append(ScenarioResult(name, case, ke, g, None, None, None, str(exc), warnings))
+            continue
+        gap = growth_gap_error(name, d.terminal_value, flows[-1], ke, g, max_growth_gap)
+        if gap is not None:
+            results.append(ScenarioResult(name, case, ke, g, None, None, None, gap, warnings))
             continue
         results.append(
             ScenarioResult(

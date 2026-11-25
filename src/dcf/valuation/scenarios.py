@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from dcf.model.revenue_projection import EstimateCase
+from dcf.model.terminal_methods import implied_growth
 
 
 class ScenarioMode(StrEnum):
@@ -78,3 +79,40 @@ class ScenarioResult:
     value_per_share: float | None
     error: str | None = None
     warnings: tuple[str, ...] = ()
+
+
+# Motivo de exclusión de un escenario bajista o alcista por g implícito incoherente.
+def growth_gap_error(
+    name: ScenarioName,
+    terminal_value: float,
+    last_flow: float,
+    rate: float,
+    terminal_growth: float,
+    max_gap: float | None,
+) -> str | None:
+    """Comprueba el g implícito del valor terminal de un escenario.
+
+    El escenario neutro nunca se excluye (es la valoración central, que solo avisa).
+
+    Args:
+        name: Escenario.
+        terminal_value: VT del escenario al final del año N, en EUR.
+        last_flow: Flujo del año N del escenario, en EUR.
+        rate: Tasa de descuento del escenario, en decimal.
+        terminal_growth: g del escenario, en decimal.
+        max_gap: Diferencia máxima admitida en puntos (0.01 = 1 punto); ``None`` = sin
+            comprobación.
+
+    Returns:
+        Motivo de exclusión, o ``None`` si el escenario es válido.
+    """
+    if max_gap is None or name is ScenarioName.NEUTRAL:
+        return None
+    implied = implied_growth(terminal_value, last_flow, rate)
+    gap = abs(implied - terminal_growth)
+    if gap <= max_gap:
+        return None
+    return (
+        f"g implícito en el VT {implied:.2%} difiere {gap * 100:.2f} puntos del g del escenario "
+        f"({terminal_growth:.2%}), más de {max_gap * 100:.2f}: escenario excluido"
+    )

@@ -11,7 +11,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from dcf.company import Company, ValuationModel, required
-from dcf.model.cost_of_equity import BetaChoice, MarketInputs, compute_cost_of_equity
+from dcf.model.cost_of_equity import (
+    BetaChoice,
+    CostOfEquityResult,
+    MarketInputs,
+    compute_cost_of_equity,
+)
 from dcf.model.tax import tax_rates
 
 WEIGHT_TOLERANCE = 1e-9
@@ -37,6 +42,8 @@ class WaccResult:
         debt_weight: D / (D + E).
         wacc: Coste medio ponderado del capital.
         warnings: Avisos sobre años excluidos de alguna media.
+        equity: Ke con su CAPM, suelo por riesgo país y avisos; ``None`` en resultados
+            construidos sin él.
     """
 
     market_inputs: MarketInputs
@@ -53,6 +60,7 @@ class WaccResult:
     debt_weight: float
     wacc: float
     warnings: tuple[str, ...]
+    equity: CostOfEquityResult | None = None
 
 
 # WACC = We · Ke + Wd · Kd · (1 − t), validando pesos y tasas.
@@ -155,4 +163,5 @@ def compute_wacc(company: Company, market_inputs: MarketInputs) -> WaccResult:
         debt_weight=debt_weight,
         wacc=wacc,
         warnings=tuple(warnings),
+        equity=equity_cost,
     )

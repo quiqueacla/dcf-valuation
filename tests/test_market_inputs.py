@@ -15,6 +15,11 @@ date = 2026-11-17
 value = 0.05
 source = "fixture prm"
 date = 2026-11-01
+
+[country_risk_premium."Spain"]
+value = 0.0
+source = "fixture crp"
+date = 2026-11-01
 """
 
 

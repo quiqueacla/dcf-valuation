@@ -89,6 +89,14 @@ def _rate_sources(equity: CostOfEquityResult, fcff_extra: str | None) -> str:
         _rate_label("PRM", equity.market_inputs.market_risk_premium),
         f"β {num(beta.value, 3)} ({beta.source}, {beta.date:%Y-%m-%d}, modo {beta.mode.value})",
     ]
+    floor = equity.floor
+    if floor is not None:
+        crp = floor.country_risk_premium
+        applied = "aplicado" if equity.floor_applied else "no aplicado"
+        parts.append(
+            f"suelo Ke {pct(floor.value)} {applied} (prima país {floor.country} "
+            f"{pct(crp.value)}, {crp.source}, {crp.date:%Y-%m-%d})"
+        )
     if fcff_extra:
         parts.append(fcff_extra)
     return "; ".join(parts)
@@ -125,7 +133,9 @@ def summary_row(company: Company, result: AnyValuationResult, growth_source: str
     else:
         w = result.wacc
         if w is not None:
-            equity = CostOfEquityResult(w.market_inputs, w.beta_choice, w.cost_of_equity)
+            equity = w.equity or CostOfEquityResult(
+                w.market_inputs, w.beta_choice, w.cost_of_equity
+            )
             kd = "sin deuda" if w.cost_of_debt is None else pct(w.cost_of_debt)
             sources = _rate_sources(
                 equity, f"Kd {kd} y t {pct(w.tax_rate)} (medias históricas, {result.source})"

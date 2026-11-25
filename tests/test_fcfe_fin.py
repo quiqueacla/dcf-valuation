@@ -59,6 +59,7 @@ def _year(fiscal_year: int, revenue: float, net_income: float, equity: float) ->
 @pytest.fixture
 def bank() -> Company:
     info = CompanyInfo(
+        country="Spain",
         ticker="BANK",
         name="Banco Sintético S.A.",
         source="fixture",

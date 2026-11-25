@@ -221,7 +221,8 @@ def load_thresholds(path: Path = DEFAULT_THRESHOLDS_PATH) -> WarningThresholds:
     """Carga los umbrales de los avisos de consistencia.
 
     Claves de ``[warnings]`` (todas opcionales): ``last_flow_deviation`` (0.33 = 33 %),
-    ``implied_growth_gap`` (0.0075 = 0,75 puntos) y ``ronic_to_rate`` (2 = 2 veces la tasa).
+    ``implied_growth_gap`` (0.0075 = 0,75 puntos), ``ronic_to_rate`` (2 = 2 veces la tasa)
+    y ``scenario_growth_gap`` (0.01 = 1 punto; excluye escenarios bajista y alcista).
 
     Args:
         path: Fichero TOML; si no existe se usan los valores de :mod:`dcf.defaults`.
@@ -240,7 +241,7 @@ def load_thresholds(path: Path = DEFAULT_THRESHOLDS_PATH) -> WarningThresholds:
     if unknown:
         raise ValueError(f"{path}: secciones desconocidas {unknown}; usa [warnings]")
     section = data.get("warnings", {})
-    keys = {"last_flow_deviation", "implied_growth_gap", "ronic_to_rate"}
+    keys = {"last_flow_deviation", "implied_growth_gap", "ronic_to_rate", "scenario_growth_gap"}
     unknown = sorted(set(section) - keys)
     if unknown:
         raise ValueError(f"{path}: claves desconocidas {unknown} en [warnings]; usa {sorted(keys)}")

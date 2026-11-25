@@ -35,8 +35,8 @@ class FcfeFinRatios:
         return_on_equity_by_year: Rentabilidad de los fondos propios (ROE) de cada
             ejercicio: Net Income / fondos propios al inicio (cierre del anterior).
             Informativo: el modelo no lo usa para proyectar.
-        average_revenue_growth: Media de los crecimientos históricos.
-        average_net_margin: Media de los márgenes netos.
+        average_revenue_growth: Mediana de los crecimientos históricos.
+        average_net_margin: Mediana de los márgenes netos.
         last_equity: Fondos propios al cierre del último ejercicio (FP_0).
     """
 
@@ -102,7 +102,7 @@ def compute_fcfe_fin_ratios(company: Company) -> FcfeFinRatios:
         company: Compañía con ventas, Net Income y fondos propios de cada ejercicio.
 
     Returns:
-        Ratios por ejercicio y medias.
+        Ratios por ejercicio y medianas.
 
     Raises:
         ValueError: Si falta algún dato de fondos propios o los del último ejercicio
@@ -132,8 +132,8 @@ def compute_fcfe_fin_ratios(company: Company) -> FcfeFinRatios:
         net_margin_by_year=margin,
         equity_by_year=equity,
         return_on_equity_by_year=roe,
-        average_revenue_growth=float(np.mean(list(growth.values()))),
-        average_net_margin=float(np.mean(list(margin.values()))),
+        average_revenue_growth=float(np.median(list(growth.values()))),
+        average_net_margin=float(np.median(list(margin.values()))),
         last_equity=last_equity,
     )
 
