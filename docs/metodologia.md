@@ -69,15 +69,15 @@ cotización; el resto se carga si está (`None` si no).
 | D&A | Depreciation And Amortization (cashflow; si no, income_stmt) | cashflow | Obligatorio en fcff y fcfe |
 | Clientes | Accounts Receivable | balance_sheet | Obligatorio en fcff y fcfe |
 | Existencias | Inventory | balance_sheet | 0 con aviso si falta (empresas sin existencias) |
-| Proveedores | Accounts Payable | balance_sheet | Obligatorio en fcff y fcfe |
+| Proveedores | Accounts Payable; si falta, Payables o Payables And Accrued Expenses (con aviso) | balance_sheet | Obligatorio en fcff y fcfe |
 | Otros activos operativos | Other Receivables, Taxes Receivable (solo si hay Accounts Receivable), Prepaid Assets, Other Current Assets | balance_sheet | 0 con aviso cada fila que falte |
-| Otros pasivos operativos | Other Payable, Total Tax Payable, Other Current Liabilities, Current Provisions | balance_sheet | 0 con aviso cada fila que falte |
-| Capex | Capital Expenditure | cashflow | Obligatorio, valor absoluto |
+| Otros pasivos operativos | Other Payable y Total Tax Payable (solo si hay Accounts Payable: Payables ya los incluye), Other Current Liabilities, Current Provisions | balance_sheet | 0 con aviso cada fila que falte |
+| Capex | Capital Expenditure; si falta, Capital Expenditure Reported y luego Purchase Of PPE (con aviso) | cashflow | Obligatorio, valor absoluto |
 | Emisión de deuda | Issuance Of Debt | cashflow | 0 con aviso si falta |
 | Reembolso de deuda | Repayment Of Debt | cashflow | 0 con aviso si falta, valor absoluto |
-| Deuda total | Total Debt (incluye arrendamientos NIIF 16) | balance_sheet | Obligatorio |
+| Deuda total | Total Debt (incluye arrendamientos NIIF 16); si falta, deuda a corto + largo plazo (ver abajo) | balance_sheet | Obligatorio; 0 con aviso si no hay ninguna fila de deuda |
 | Caja | Cash Cash Equivalents And Short Term Investments | balance_sheet | Obligatorio |
-| Minoritarios | Minority Interest | balance_sheet | 0 con aviso si falta |
+| Minoritarios | Minority Interest | balance_sheet | 0 con aviso si falta; negativo aceptado con aviso |
 | Cotización | info.currentPrice | info | Obligatorio |
 | Beta | info.beta | info | Opcional en la carga; el modo de `[beta]` decide (§4) |
 | Ventas estimadas +1, +2 | revenue_estimate "0y", "+1y" (avg) | revenue_estimate | Opcional, aviso si falta |
@@ -94,13 +94,27 @@ cotización; el resto se carga si está (`None` si no).
   intereses. Si `config/data/market_inputs.toml` incluye `[default_cost_of_debt]`, se estiman
   como Intereses_i = Kd_defecto · Deuda total_i, con aviso. Así el FCFF_i y el Kd_i de ese año
   son coherentes (Kd_i = Kd_defecto).
+- **Deuda total ausente:** Yahoo deja vacío «Total Debt» en algunos años (XOM, ISRG, MNST).
+  Se suman la deuda a corto («Current Debt And Capital Lease Obligation» o, si no está,
+  «Current Debt») y a largo plazo («Long Term Debt And Capital Lease Obligation» o «Long Term
+  Debt»), con arrendamientos como «Total Debt». Sin ninguna de esas filas, la empresa no
+  tiene deuda ese año: 0 con aviso.
+- **Proveedores y Capex ausentes:** «Payables» ya incluye «Other Payable» y «Total Tax
+  Payable», que entonces no se suman aparte (no se cuentan dos veces). «Capital Expenditure
+  Reported» es el importe que publica la empresa; «Purchase Of PPE» puede no incluir el
+  inmovilizado inmaterial ni la exploración (DVN: 322 M$ frente a 3.592 M$ declarados).
+- **Minoritarios negativos:** filiales con socios externos y patrimonio negativo (AENA.MC,
+  GILD). Se aceptan con aviso; en el puente suman al valor de los fondos propios.
 - **Acciones diluidas:** media diluida del último ejercicio (NIC 33). No recoge recompras ni
   emisiones posteriores al cierre.
 - **Tipo de empresa:** se guardan `info.sector` e `info.industry` y se clasifica la empresa como
   `industrial`, `banco`, `aseguradora` o `inmobiliaria` con la tabla `config/company_types.toml`,
   que usa las claves `industryKey` (primero) y `sectorKey`. Lo que no encaja es `industrial`;
   sin sector ni industria queda sin clasificar, con aviso. La misma tabla fija el modelo de
-  cada tipo (`model`): `fcfe` para bancos y aseguradoras, `fcff_cfo` para el resto. Modelos
+  cada tipo (`model`): `fcfe` para bancos y aseguradoras, `fcff_cfo` para el resto.
+  Las financieras no bancarias con balance financiero (`capital-markets`,
+  `asset-management`, `credit-services`: GS, BLK, AXP…) se clasifican como `banco`; las
+  bolsas y proveedores de datos y los corredores de seguros siguen como industriales. Modelos
   adecuados: industrial → fcff_cfo; banco y aseguradora → fcfe; inmobiliaria → ninguno de los dos
   (el valor está en los activos: NAV, FFO). Si el modelo aplicado no es adecuado para el tipo
   (o el tipo no se ha clasificado), se valora igual, pero el informe y el resumen de la línea
@@ -222,6 +236,11 @@ cuatro modelos (en los FCFF, dentro del WACC); con tasa de descuento forzada no 
 - VE = VA de los flujos + VA del VT
 
 Se informa siempre el peso del VT descontado sobre el VE.
+
+Si el VE (o, en los FCFE, los fondos propios) sale negativo o nulo, la valoración falla con
+el desglose: valor actual de los flujos proyectados y del VT. Sale de flujos o un VT
+negativos (márgenes, Capex o circulante que consumen más caja de la que se genera): el DCF
+no da un valor significativo con ese modelo. En fcff se sugiere probar fcff_cfo, y al revés.
 
 ## 6. Valor por acción
 

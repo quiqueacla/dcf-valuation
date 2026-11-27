@@ -145,7 +145,6 @@ def test_emision_ausente_cero_con_aviso() -> None:
         ("income_stmt", "Total Revenue"),
         ("income_stmt", "Diluted Average Shares"),
         ("income_stmt", "Interest Expense"),
-        ("balance_sheet", "Total Debt"),
         ("balance_sheet", "Cash Cash Equivalents And Short Term Investments"),
     ],
 )
@@ -312,3 +311,88 @@ def test_carga_circulante_operativo() -> None:
     assert last.other_operating_assets == pytest.approx(5.0 * FX)
     assert last.other_operating_liabilities == pytest.approx(30.0 * FX)
     assert any("Circulante operativo" in w and "Other Payable" in w for w in c.info.data_warnings)
+
+
+# Sin «Total Debt» en un año: deuda a corto + largo plazo (con arrendamientos) y aviso.
+def test_deuda_total_ausente_se_suma_por_componentes() -> None:
+    raw = _raw()
+    balance = raw.balance_sheet.copy()
+    balance.loc["Total Debt", CLOSES[0]] = math.nan
+    balance.loc["Current Debt And Capital Lease Obligation"] = [50.0] * 5
+    balance.loc["Long Term Debt"] = [150.0] * 5
+    c = build_company(dataclasses.replace(raw, balance_sheet=balance))
+    assert c.balance.total_debt == pytest.approx(200.0 * FX, rel=REL)
+    assert c.debt_cost_data[-1].total_debt == pytest.approx(200.0 * FX, rel=REL)
+    warnings = [w for w in c.info.data_warnings if "Total Debt" in w]
+    assert len(warnings) == 1 and "corto (45 EUR) + largo plazo (135 EUR)" in warnings[0]
+
+
+# Sin «Total Debt» ni filas de deuda: empresa sin deuda, 0 con aviso.
+def test_deuda_total_y_componentes_ausentes_es_cero() -> None:
+    raw = _raw()
+    c = build_company(
+        dataclasses.replace(raw, balance_sheet=raw.balance_sheet.drop(index="Total Debt"))
+    )
+    assert c.balance.total_debt == 0.0
+    assert all(d.total_debt == 0.0 for d in c.debt_cost_data)
+    assert sum("sin filas de deuda" in w for w in c.info.data_warnings) == 4
+
+
+# Sin «Accounts Payable»: se usa «Payables», que ya incluye Other Payable y Total Tax Payable.
+def test_proveedores_ausentes_usan_payables_sin_contar_dos_veces() -> None:
+    raw = _raw()
+    balance = raw.balance_sheet.drop(index="Accounts Payable")
+    balance.loc["Payables"] = [90.0] * 5
+    balance.loc["Other Payable"] = [20.0] * 5
+    c = build_company(dataclasses.replace(raw, balance_sheet=balance))
+    last = c.historicals[-1]
+    assert last.payables == pytest.approx(90.0 * FX, rel=REL)
+    assert last.other_operating_liabilities == 0.0  # Other Payable ya está en Payables
+    assert sum("se usa 'Payables'" in w for w in c.info.data_warnings) == 4
+
+
+# Con «Accounts Payable», Other Payable sigue sumando a los otros pasivos operativos.
+def test_con_accounts_payable_other_payable_suma_aparte() -> None:
+    raw = _raw()
+    balance = raw.balance_sheet.copy()
+    balance.loc["Other Payable"] = [20.0] * 5
+    c = build_company(dataclasses.replace(raw, balance_sheet=balance))
+    assert c.historicals[-1].other_operating_liabilities == pytest.approx(20.0 * FX, rel=REL)
+
+
+# Capex ausente en un año: «Capital Expenditure Reported» antes que «Purchase Of PPE».
+@pytest.mark.parametrize(
+    ("rows", "expected"),
+    [
+        ({"Capital Expenditure Reported": -70.0, "Purchase Of PPE": -40.0}, 70.0),
+        ({"Purchase Of PPE": -40.0}, 40.0),
+    ],
+)
+def test_capex_ausente_usa_fila_alternativa(rows: dict[str, float], expected: float) -> None:
+    raw = _raw()
+    cashflow = raw.cashflow.copy()
+    cashflow.loc["Capital Expenditure", CLOSES[0]] = math.nan
+    for row, value in rows.items():
+        cashflow.loc[row] = [value] * 5
+    c = build_company(dataclasses.replace(raw, cashflow=cashflow))
+    assert c.historicals[-1].capital_expenditure == pytest.approx(expected * FX, rel=REL)
+    first = next(iter(rows))
+    assert sum(f"se usa '{first}'" in w for w in c.info.data_warnings) == 1
+
+
+def test_capex_ausente_sin_alternativa_es_error() -> None:
+    raw = _raw()
+    cashflow = raw.cashflow.copy()
+    cashflow.loc["Capital Expenditure", CLOSES[0]] = math.nan
+    with pytest.raises(ValueError, match="'Capital Expenditure' sin dato"):
+        build_company(dataclasses.replace(raw, cashflow=cashflow))
+
+
+# Minoritarios negativos: se aceptan con aviso.
+def test_minoritarios_negativos_con_aviso() -> None:
+    raw = _raw()
+    balance = raw.balance_sheet.copy()
+    balance.loc["Minority Interest"] = [-30.0] * 5
+    c = build_company(dataclasses.replace(raw, balance_sheet=balance))
+    assert c.balance.minority_interest == pytest.approx(-30.0 * FX, rel=REL)
+    assert any("'Minority Interest' negativo" in w for w in c.info.data_warnings)

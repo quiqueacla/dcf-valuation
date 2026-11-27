@@ -24,7 +24,17 @@ vt = "gordon_value_driver"
 [banco]
 model = "fcfe_fin"
 vt = "gordon"
-industries = ["banks-diversified", "banks-regional"]
+# Financieras no bancarias con balance financiero (brókeres, gestoras, crédito al consumo):
+# su deuda es materia prima del negocio, como en un banco, y Yahoo no publica EBIT, Capex
+# o proveedores de muchas de ellas (GS, MS, SCHW, BLK, STT, AXP, COF; 2026-11-27).
+# Las bolsas y proveedores de datos (financial-data-stock-exchanges) siguen como industriales.
+industries = [
+    "banks-diversified",
+    "banks-regional",
+    "capital-markets",
+    "asset-management",
+    "credit-services",
+]
 
 [aseguradora]
 model = "fcfe_fin"

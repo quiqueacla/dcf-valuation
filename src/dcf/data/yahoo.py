@@ -71,17 +71,23 @@ ROW_INVENTORY = "Inventory"
 ROWS_DA_CASHFLOW = ("Depreciation And Amortization", "Depreciation Amortization Depletion")
 ROWS_DA_INCOME = ("Reconciled Depreciation",)
 ROWS_RECEIVABLES = ("Accounts Receivable", "Receivables")
-ROWS_PAYABLES = ("Accounts Payable",)
+ROWS_PAYABLES = ("Accounts Payable", "Payables", "Payables And Accrued Expenses")
+"""Proveedores; «Payables» ya incluye «Other Payable» y «Total Tax Payable», y «Payables And
+Accrued Expenses» además los gastos devengados."""
 ROWS_OTHER_RECEIVABLES = ("Other Receivables", "Taxes Receivable")
 """Otras cuentas a cobrar; ya van dentro de «Receivables» si se usa esa fila."""
+ROWS_OTHER_PAYABLES = ("Other Payable", "Total Tax Payable")
+"""Otras cuentas a pagar; ya van dentro de «Payables» si se usa esa fila."""
 ROWS_OTHER_OPERATING_ASSETS = ("Prepaid Assets", "Other Current Assets")
-ROWS_OTHER_OPERATING_LIABILITIES = (
-    "Other Payable",
-    "Total Tax Payable",
-    "Other Current Liabilities",
-    "Current Provisions",
-)
-"""Pasivos corrientes de la operación sin coste financiero (anticipos, impuestos, provisiones)."""
+ROWS_OTHER_OPERATING_LIABILITIES = ("Other Current Liabilities", "Current Provisions")
+"""Pasivos corrientes de la operación sin coste financiero (anticipos, provisiones)."""
+# Deuda total por componentes si falta «Total Debt»: corto y largo plazo, cada uno con los
+# arrendamientos (como «Total Debt») y, si Yahoo no da esa fila, sin ellos.
+ROWS_CURRENT_DEBT = ("Current Debt And Capital Lease Obligation", "Current Debt")
+ROWS_LONG_TERM_DEBT = ("Long Term Debt And Capital Lease Obligation", "Long Term Debt")
+# Capex si falta «Capital Expenditure»: el importe publicado por la empresa y, si no, la
+# compra de inmovilizado material (puede no incluir el inmaterial ni la exploración).
+ROWS_CAPEX_FALLBACK = ("Capital Expenditure Reported", "Purchase Of PPE")
 
 # Periodos de revenue_estimate: ejercicio en curso (+1) y siguiente (+2).
 ESTIMATE_PERIODS = ("0y", "+1y")
@@ -455,6 +461,13 @@ def _operating_items(
                 "(necesario para los modelos fcff y fcfe; prueba --model fcff_cfo)"
             )
         result[name] = None if value is None else abs(value) * fx
+    payables_detail = _cell(raw.balance_sheet, ROWS_PAYABLES[0], column) is not None
+    if not payables_detail and result["payables"] is not None and required:
+        row = next(r for r in ROWS_PAYABLES if _cell(raw.balance_sheet, r, column) is not None)
+        warnings.append(
+            f"'{ROWS_PAYABLES[0]}' ausente en {BALANCE} ({column.date()}): se usa '{row}', "
+            f"que ya incluye {' y '.join(ROWS_OTHER_PAYABLES)}"
+        )
     inventory = _cell(raw.balance_sheet, ROW_INVENTORY, column)
     if inventory is None and required:
         warnings.append(f"'{ROW_INVENTORY}' ausente en {BALANCE} ({column.date()}): se usa 0")
@@ -478,7 +491,10 @@ def _operating_items(
         return amount * fx
 
     result["other_operating_assets"] = total(asset_rows)
-    result["other_operating_liabilities"] = total(ROWS_OTHER_OPERATING_LIABILITIES)
+    liability_rows = (ROWS_OTHER_PAYABLES if payables_detail else ()) + (
+        ROWS_OTHER_OPERATING_LIABILITIES
+    )
+    result["other_operating_liabilities"] = total(liability_rows)
     if missing and required:
         warnings.append(
             f"Circulante operativo ({column.date()}): Yahoo no publica {', '.join(missing)}; "
@@ -552,6 +568,55 @@ def _optional(
     return (abs(value) if absolute else value) * fx
 
 
+# Deuda total en EUR: «Total Debt»; si falta, corto + largo plazo con aviso, y 0 con aviso
+# si Yahoo no publica ninguna fila de deuda ese año (empresa sin deuda).
+def _total_debt(bs: pd.DataFrame, column: pd.Timestamp, fx: float, warnings: list[str]) -> float:
+    value = _cell(bs, ROW_TOTAL_DEBT, column)
+    if value is not None:
+        return value * fx
+    current = _first_cell(bs, ROWS_CURRENT_DEBT, column)
+    long_term = _first_cell(bs, ROWS_LONG_TERM_DEBT, column)
+    if current is None and long_term is None:
+        warnings.append(
+            f"'{ROW_TOTAL_DEBT}' ausente en {BALANCE} ({column.date()}) y sin filas de deuda a "
+            "corto ni a largo plazo: se usa 0"
+        )
+        return 0.0
+    short, long = abs(current or 0.0) * fx, abs(long_term or 0.0) * fx
+    warnings.append(
+        f"'{ROW_TOTAL_DEBT}' ausente en {BALANCE} ({column.date()}): se usa deuda a corto "
+        f"({short:,.0f} EUR) + largo plazo ({long:,.0f} EUR)"
+    )
+    return short + long
+
+
+# Capex (valor absoluto, moneda original): «Capital Expenditure»; si falta, la primera fila
+# alternativa con aviso; sin ninguna, el error de dato obligatorio.
+def _capex(cf: pd.DataFrame, column: pd.Timestamp, warnings: list[str]) -> float:
+    if _cell(cf, ROW_CAPEX, column) is None:
+        for row in ROWS_CAPEX_FALLBACK:
+            value = _cell(cf, row, column)
+            if value is not None:
+                warnings.append(
+                    f"'{ROW_CAPEX}' ausente en {CASHFLOW} ({column.date()}): se usa '{row}'"
+                )
+                return abs(value)
+    return abs(_required(cf, CASHFLOW, ROW_CAPEX, column))
+
+
+# Minoritarios en EUR: 0 con aviso si faltan; si son negativos (filiales con patrimonio
+# negativo), se aceptan con aviso porque suman al valor de los fondos propios.
+def _minority(bs: pd.DataFrame, column: pd.Timestamp, fx: float, warnings: list[str]) -> float:
+    value = _zero_if_missing(bs, BALANCE, ROW_MINORITY, column, warnings) * fx
+    if value < 0:
+        warnings.append(
+            f"'{ROW_MINORITY}' negativo en {BALANCE} ({column.date()}): {value:,.0f} EUR "
+            "(participaciones no dominantes con patrimonio negativo); suma al valor de los "
+            "fondos propios"
+        )
+    return value
+
+
 # Cuerpo de build_company: estados, balance, estimaciones e información de la compañía.
 def _build_company(
     raw: YahooRawData,
@@ -580,7 +645,7 @@ def _build_company(
         revenue = _required(inc, INCOME, ROW_REVENUE, col) * fx
         net_income = _required(inc, INCOME, ROW_NET_INCOME, col) * fx
         if fcff:
-            total_debt = _required(bs, BALANCE, ROW_TOTAL_DEBT, col) * fx
+            total_debt = _total_debt(bs, col, fx, warnings)
             interest = _interest(inc, col, total_debt, fx, default_cost_of_debt, warnings)
             year = HistoricalYear(
                 fiscal_year=col.year,
@@ -591,7 +656,7 @@ def _build_company(
                     if model is ValuationModel.FCFF_CFO
                     else _optional(cf, ROW_CFO, col, fx)
                 ),
-                capital_expenditure=abs(_required(cf, CASHFLOW, ROW_CAPEX, col)) * fx,
+                capital_expenditure=_capex(cf, col, warnings) * fx,
                 interest_expense=interest,
                 debt_issuance=abs(_zero_if_missing(cf, CASHFLOW, ROW_DEBT_ISSUANCE, col, warnings))
                 * fx,
@@ -636,12 +701,8 @@ def _build_company(
             if fcff
             else _optional(bs, ROW_CASH, last, fx)
         ),
-        total_debt=(
-            _required(bs, BALANCE, ROW_TOTAL_DEBT, last) * fx
-            if fcff
-            else _optional(bs, ROW_TOTAL_DEBT, last, fx)
-        ),
-        minority_interest=_zero_if_missing(bs, BALANCE, ROW_MINORITY, last, warnings) * fx,
+        total_debt=(debt_cost[-1].total_debt if fcff else _optional(bs, ROW_TOTAL_DEBT, last, fx)),
+        minority_interest=_minority(bs, last, fx, warnings),
         diluted_shares=_required(inc, INCOME, ROW_DILUTED_SHARES, last),
         share_price=price,
         # Beta opcional: si falta, el modo de [beta] decide (error o beta del fichero).

@@ -44,6 +44,45 @@ class DiscountedFlows:
     total: float
 
 
+# Error claro si el valor descontado (VE o fondos propios) no es positivo, con su desglose.
+def require_positive_value(
+    label: str,
+    value: float,
+    flows_present: float,
+    terminal_present: float,
+    flow_name: str,
+    hint: str | None = None,
+) -> None:
+    """Comprueba que el valor descontado sea positivo y, si no, explica por qué.
+
+    Un valor negativo o nulo sale de flujos proyectados o de un valor terminal negativos
+    (márgenes, Capex o circulante que consumen más caja de la que genera la empresa): el
+    DCF no da un valor significativo con ese modelo.
+
+    Args:
+        label: Nombre del valor ("Valor de empresa", "Fondos propios").
+        value: Valor descontado total, en EUR.
+        flows_present: Suma de los valores actuales de los flujos proyectados, en EUR.
+        terminal_present: Valor terminal descontado, en EUR.
+        flow_name: Nombre del flujo ("FCFF", "FCFE").
+        hint: Sugerencia final (p. ej. otro modelo); ``None`` = sin sugerencia.
+
+    Raises:
+        ValueError: Si ``value`` ≤ 0, con el desglose en millones de EUR.
+    """
+    if value > 0:
+        return
+    millions = 1e6
+    message = (
+        f"{label} negativo o nulo ({value / millions:,.1f} M EUR): valor actual de los "
+        f"{flow_name} proyectados {flows_present / millions:,.1f} M EUR y del valor terminal "
+        f"{terminal_present / millions:,.1f} M EUR. Los {flow_name} proyectados o el valor "
+        "terminal son negativos (márgenes, Capex o circulante que consumen más caja de la que "
+        "se genera): el DCF no da un valor significativo con este modelo"
+    )
+    raise ValueError(f"{message}; {hint}" if hint else message)
+
+
 # Factores de descuento a final de año: 1 / (1 + tasa)^k, k = 1..n.
 def discount_factors(rate: float, years: int) -> np.ndarray:
     """Calcula los factores de descuento a final de año.

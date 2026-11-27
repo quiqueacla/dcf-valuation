@@ -380,3 +380,25 @@ def test_delta_nwc_historico_es_la_variacion_del_balance(industrial: Company) ->
     )
     assert r.nwc_change_by_year == {2025: pytest.approx(-40.0, rel=REL)}
     assert r.fcff_by_year == {2025: pytest.approx(172.0, rel=REL)}
+
+
+# FCFF proyectados negativos (Capex 50 % de las ventas): error claro con el desglose.
+def test_valor_de_empresa_negativo_explica_la_causa(
+    industrial: Company, market_inputs: MarketInputs
+) -> None:
+    years = tuple(
+        dataclasses.replace(h, capital_expenditure=h.revenue * 0.5) for h in industrial.historicals
+    )
+    with pytest.raises(
+        ValueError, match=r"Valor de empresa negativo o nulo .* FCFF proyectados .* fcff_cfo"
+    ):
+        _value(dataclasses.replace(industrial, historicals=years), market_inputs)
+
+
+# Minoritarios negativos: suman al valor de los fondos propios.
+def test_minoritarios_negativos_suman_al_valor(
+    industrial: Company, market_inputs: MarketInputs
+) -> None:
+    balance = dataclasses.replace(industrial.balance, minority_interest=-50.0)
+    r = _value(dataclasses.replace(industrial, balance=balance), market_inputs)
+    assert r.equity_value == pytest.approx(EQUITY + 50.0, rel=REL)

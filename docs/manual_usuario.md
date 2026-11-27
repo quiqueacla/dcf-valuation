@@ -247,9 +247,13 @@ esa ejecución y prevalecen sobre los ficheros.
 | 0 | Todos los tickers se han valorado |
 | 1 | Algún ticker ha fallado, o hay un error de configuración |
 | 2 | No se ha indicado ningún ticker |
+| 130 | Lote interrumpido con Ctrl+C (se guarda el resumen de los tickers ya procesados) |
 
 Útil para scripts: un lote con un ticker erróneo valora los demás, los incluye en el resumen
-con su error y termina con código 1.
+con su error y termina con código 1. En un lote, cualquier error de un ticker (datos, red,
+certificados SSL, límite de peticiones de Yahoo) se registra y no detiene el resto; con un solo
+ticker, los errores que no son de datos se muestran completos. Si interrumpes un lote con
+Ctrl+C, se guarda el resumen de los tickers procesados hasta ese momento.
 
 ---
 
@@ -424,7 +428,9 @@ fichero. Qué mide cada aviso: §9.2 de este manual y metodología §12.
 ### 7.5 Listas de tickers
 
 Ficheros de texto para `-f`: un ticker (o varios separados por espacios o comas) por línea,
-`#` para comentarios. Ejemplos incluidos: `tickers.example.txt` y `config/tickers/ibex35.txt`.
+`#` para comentarios. Ejemplos incluidos: `tickers.example.txt`, `config/tickers/ibex35.txt`,
+`config/tickers/sp500.txt` y `config/tickers/stoxx600.txt` (estos dos, con su fuente y fecha en
+la cabecera).
 
 ```powershell
 dcf -f config\tickers\ibex35.txt -o informes\ibex
@@ -620,7 +626,8 @@ dcf ITX.MC SAN.MC --no-extras
 | `Falta el RONIC para gordon_value_driver` | No se puede calcular el ROIC histórico (faltan fondos propios o caja) | `--set ronic=` o `[ronic."TICKER"]` |
 | `Yahoo: falta la fila '…'` | Yahoo no publica un dato obligatorio para ese modelo | Prueba otro modelo (p. ej. `fcff_cfo` no necesita D&A ni circulante) o revisa el ticker |
 | `--from-cache solo admite un ticker` | `--from-cache` con varios tickers | Una ejecución por ticker |
-| Un ticker falla dentro de un lote | Error de datos de esa empresa | Se valora el resto; el error aparece en la consola y en el resumen |
+| `Valor de empresa negativo o nulo` (o `Fondos propios`) | Los flujos proyectados o el VT son negativos (márgenes, Capex o circulante) | El DCF no es significativo con ese modelo; prueba el que sugiere el mensaje (`--model fcff_cfo` o `fcff`) |
+| Un ticker falla dentro de un lote | Error de datos, de red o de Yahoo en esa empresa | Se valora el resto; el error (con su tipo si no es de datos) aparece en la consola y en el resumen |
 
 ---
 

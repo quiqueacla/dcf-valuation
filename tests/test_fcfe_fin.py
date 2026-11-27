@@ -177,7 +177,7 @@ def test_error_si_fondos_propios_no_positivos(bank: Company, market_inputs: Mark
 def test_error_si_el_valor_no_es_positivo(bank: Company, market_inputs: MarketInputs) -> None:
     # Pérdidas: NI negativo → FCFE y valor negativos.
     years = tuple(dataclasses.replace(h, net_income=-h.net_income) for h in bank.historicals)
-    with pytest.raises(ValueError, match="equity_value"):
+    with pytest.raises(ValueError, match="Fondos propios negativo o nulo .* FCFE proyectados"):
         _value(dataclasses.replace(bank, historicals=years), market_inputs)
 
 

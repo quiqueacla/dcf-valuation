@@ -29,7 +29,7 @@ from dcf.model.terminal_methods import (
     terminal_function,
     terminal_value,
 )
-from dcf.valuation.discounting import value_per_share
+from dcf.valuation.discounting import require_positive_value, value_per_share
 from dcf.valuation.enterprise import (
     TerminalFn,
     compute_enterprise_value,
@@ -175,6 +175,14 @@ def value_company(
     tv = terminal_value(options, basis, rate.value, g, rf, "WACC")
     fn = terminal_function(options, basis, rf, "WACC")
     ev = compute_enterprise_value(fcffs, rate.value, g, rf, fn)
+    require_positive_value(
+        "Valor de empresa",
+        ev.enterprise_value,
+        sum(ev.present_values),
+        ev.terminal_value_present,
+        "FCFF",
+        "prueba --model fcff",
+    )
     equity = equity_value(ev.enterprise_value, company.balance)
 
     projections = tuple(

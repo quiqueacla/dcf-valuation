@@ -19,11 +19,11 @@ date = 2026-01-05
 # OPCIONAL. Coste de la deuda antes de impuestos para estimar los intereses de los
 # ejercicios en que Yahoo no los publica: intereses = value × deuda total del año.
 # Si se omite la sección y faltan intereses, la carga falla con un error claro.
-# Descomenta la sección completa para usarla.
-# [default_cost_of_debt]
-# value =
-# source = ""
-# date = AAAA-MM-DD
+# Kd = rf (3,42 %, [risk_free_rate]) + diferencial de default Baa2/BBB de Damodaran (1,11 %).
+[default_cost_of_debt]
+value = 0.0453
+source = "rf AAA - Bonos BCE (3,42 %) + diferencial Baa2/BBB 1,11 % (Damodaran, ratings.html, datos de enero de 2026)"
+date = 2026-01-05
 
 [beta."REP.MC"]
 mode = "fichero"

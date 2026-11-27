@@ -28,7 +28,7 @@ from dcf.model.terminal_methods import (
     terminal_function,
     terminal_value,
 )
-from dcf.valuation.discounting import sensitivity_grid, value_per_share
+from dcf.valuation.discounting import require_positive_value, sensitivity_grid, value_per_share
 from dcf.valuation.enterprise import TerminalFn
 from dcf.valuation.equity import compute_equity_scenarios, discount_equity, resolve_cost_of_equity
 from dcf.valuation.fcfe_fin_result import FcfeFinProjectedYear, FcfeFinValuationResult
@@ -118,6 +118,9 @@ def value_company(
     fn = terminal_function(options, basis, rf, "Ke")
     flows = [f.fcfe for f in projection.flows]
     d = discount_equity(flows, ke, g, fn)
+    require_positive_value(
+        "Fondos propios", d.total, sum(d.present_values), d.terminal_value_present, "FCFE"
+    )
     shares = company.balance.diluted_shares
 
     def value_for(r: float, growth: float) -> float:

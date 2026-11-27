@@ -34,7 +34,10 @@ def rules() -> CompanyTypeRules:
         ("energy", "oil-gas-integrated", CompanyType.INDUSTRIAL),  # REP.MC
         ("technology", "consumer-electronics", CompanyType.INDUSTRIAL),  # AAPL
         ("financial-services", "insurance-brokers", CompanyType.INDUSTRIAL),  # corredores
-        ("financial-services", "asset-management", CompanyType.INDUSTRIAL),
+        ("financial-services", "capital-markets", CompanyType.BANK),  # GS, MS, SCHW
+        ("financial-services", "asset-management", CompanyType.BANK),  # BLK, STT
+        ("financial-services", "credit-services", CompanyType.BANK),  # AXP, COF
+        ("financial-services", "financial-data-stock-exchanges", CompanyType.INDUSTRIAL),
         (None, "banks-regional", CompanyType.BANK),
         ("real-estate", None, CompanyType.REAL_ESTATE),
     ],

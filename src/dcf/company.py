@@ -402,7 +402,8 @@ class BalanceSnapshot:
             ``None`` si el modelo no la necesita (en FCFE no hay puente de caja).
         total_debt: Deuda financiera total al cierre (peso D del WACC, valor contable).
             ``None`` si el modelo no la necesita (FCFE).
-        minority_interest: Intereses minoritarios (participaciones no dominantes).
+        minority_interest: Intereses minoritarios (participaciones no dominantes). Puede
+            ser negativo si las filiales con socios externos tienen patrimonio negativo.
         diluted_shares: Número de acciones diluidas en circulación.
         share_price: Cotización de la acción, en EUR.
         beta: Sensibilidad del rendimiento de la acción al del mercado (riesgo
@@ -419,13 +420,13 @@ class BalanceSnapshot:
     share_price: float
     beta: float | None
 
-    # Valida importes no negativos, acciones y precio positivos y beta finita si existe.
+    # Valida caja y deuda no negativas, minoritarios finitos, acciones y precio positivos.
     def __post_init__(self) -> None:
         _require_aware("balance_date", self.balance_date)
         _if_present(_require_finite, "beta", self.beta)
         _if_present(_require_non_negative, "cash", self.cash)
         _if_present(_require_non_negative, "total_debt", self.total_debt)
-        _require_non_negative("minority_interest", self.minority_interest)
+        _require_finite("minority_interest", self.minority_interest)
         _require_positive("diluted_shares", self.diluted_shares)
         _require_positive("share_price", self.share_price)
 
