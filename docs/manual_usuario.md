@@ -82,6 +82,19 @@ uv sync
   las terminales nuevas se abrirán con el entorno activado.
 
 Sin uv: `python -m venv .venv`, `.\.venv\Scripts\Activate.ps1` y `pip install -e .`.
+Necesita un Python ≥ 3.12 instalado: en Windows, `python` suele ser el acceso directo de
+Microsoft Store y falla si no hay ninguno. Para instalar uv: `winget install --id=astral-sh.uv -e`.
+
+**Red corporativa con inspección TLS** (Netskope, Zscaler…): si `uv sync` falla con
+`invalid peer certificate: UnknownIssuer` o la descarga de Yahoo con `curl: (60) … self
+signed certificate in certificate chain`, genera un `.pem` con los certificados de Windows y
+úsalo para uv y yfinance:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows_ca_bundle.ps1 -SetUserEnv
+```
+
+Después abre una terminal nueva. Detalle en el README («Red corporativa con inspección TLS»).
 
 ### Linux, macOS y WSL
 
