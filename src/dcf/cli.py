@@ -305,27 +305,47 @@ def main(argv: Sequence[str] | None = None, now: datetime | None = None) -> int:
     failures = 0
     rows: list[SummaryRow] = []
     growth_source = _growth_source(args)
-    for ticker in tickers:
-        try:
-            company, result, path = _value_one(
-                ticker, args, settings, growth, market, moment, type_rules, thresholds
-            )
-        except (ValueError, FileNotFoundError) as exc:
-            failures += 1
-            print(f"Error en {ticker}: {exc}", file=sys.stderr)
-            rows.append(error_row(ticker, str(exc)))
-            continue
-        rows.append(summary_row(company, result, growth_source))
-        if len(tickers) == 1:
-            print_report(render_report(company, result), raw=args.raw)
-            print(f"\nInforme guardado en {path}")
-        else:
-            print(_summary(company, result, path))
+    # Un error de un ticker (datos, red, certificados, límite de Yahoo) no detiene el lote;
+    # con Ctrl+C se guarda el resumen de los tickers ya procesados.
+    batch = len(tickers) > 1
+    interrupted = False
+    try:
+        for ticker in tickers:
+            try:
+                company, result, path = _value_one(
+                    ticker, args, settings, growth, market, moment, type_rules, thresholds
+                )
+            except (ValueError, FileNotFoundError) as exc:
+                failures += 1
+                print(f"Error en {ticker}: {exc}", file=sys.stderr)
+                rows.append(error_row(ticker, str(exc)))
+                continue
+            except Exception as exc:
+                if not batch:
+                    raise
+                failures += 1
+                message = f"{type(exc).__name__}: {exc}"
+                print(f"Error en {ticker}: {message}", file=sys.stderr)
+                rows.append(error_row(ticker, message))
+                continue
+            rows.append(summary_row(company, result, growth_source))
+            if not batch:
+                print_report(render_report(company, result), raw=args.raw)
+                print(f"\nInforme guardado en {path}")
+            else:
+                print(_summary(company, result, path))
+    except KeyboardInterrupt:
+        if not batch:
+            raise
+        interrupted = True
+        print(f"\nInterrumpido: {len(rows)} de {len(tickers)} tickers procesados.", file=sys.stderr)
 
-    if len(tickers) > 1:
-        print(f"\n{len(tickers) - failures} de {len(tickers)} tickers valorados.")
+    if batch:
+        print(f"\n{len(rows) - failures} de {len(tickers)} tickers valorados.")
         md_path, csv_path = _write_summary(rows, args.output_dir, moment)
         print(f"Resumen guardado en {md_path} y {csv_path}")
+    if interrupted:
+        return 130
     return 1 if failures else 0
 
 

@@ -207,3 +207,45 @@ def test_modelo_forzado_avisa_si_no_es_adecuado(
     assert "fcff_cfo + gordon, WACC" in banco and "AVISO: tipo banco, el modelo fcff_cfo" in banco
     report = (tmp_path / "out" / "BANCO_20261118T120000Z.md").read_text(encoding="utf-8")
     assert "**Aviso de modelo:** Empresa de tipo banco" in report
+
+
+# Fallo de red en un ticker: no para el lote y el resumen se guarda con el error.
+def _fetch_con_error_de_red(
+    ticker: str,
+    kd: MarketRate | None,
+    cache_dir: Path,
+    type_rules: CompanyTypeRules,
+    model: ValuationModel | None,
+    terminal: TerminalMethod | None = None,
+) -> Company:
+    if ticker == "RED":
+        raise ConnectionError("SSL certificate problem")
+    if ticker == "STOP":
+        raise KeyboardInterrupt
+    return _fake_fetch(ticker, kd, cache_dir, type_rules, model, terminal)
+
+
+def test_error_de_red_no_para_el_lote(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "fetch_company", _fetch_con_error_de_red)
+    argv = _two_tickers(tmp_path)
+    argv[1:1] = ["RED"]  # AAA, RED, BANCO
+    assert cli.main(argv, now=NOW) == 1
+    out, err = capsys.readouterr()
+    assert "Error en RED: ConnectionError: SSL certificate problem" in err
+    assert "2 de 3 tickers valorados" in out
+    assert (tmp_path / "out" / "resumen_20261118T120000Z.csv").is_file()
+
+
+def test_ctrl_c_guarda_el_resumen_parcial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "fetch_company", _fetch_con_error_de_red)
+    argv = _two_tickers(tmp_path)
+    argv[1:1] = ["STOP"]  # AAA, STOP, BANCO
+    assert cli.main(argv, now=NOW) == 130
+    out, err = capsys.readouterr()
+    assert "Interrumpido: 1 de 3" in err and "1 de 3 tickers valorados" in out
+    md = (tmp_path / "out" / "resumen_20261118T120000Z.md").read_text(encoding="utf-8")
+    assert "AAA" in md and "BANCO" not in md
